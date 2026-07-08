@@ -239,7 +239,7 @@ function openAboutWindow() {
   }
   aboutWin = new BrowserWindow({
     width: 400,
-    height: 600,
+    height: 430,
     resizable: false,
     minimizable: false,
     maximizable: false,

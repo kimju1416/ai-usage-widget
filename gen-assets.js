@@ -16,63 +16,6 @@ function chunk(type, data) {
   return Buffer.concat([len, typeBuf, data, crcBuf]);
 }
 
-function makePng(size) {
-  const px = Buffer.alloc(size * size * 4);
-  const r = Math.round(size * 0.19);
-  const bg = [217, 119, 6]; // amber-600 배경 (Claude 톤)
-
-  function inRounded(x, y, x0, y0, x1, y1, rad) {
-    if (x < x0 || x > x1 || y < y0 || y > y1) return false;
-    const cx = Math.max(x0 + rad, Math.min(x, x1 - rad));
-    const cy = Math.max(y0 + rad, Math.min(y, y1 - rad));
-    const dx = x - cx, dy = y - cy;
-    return dx * dx + dy * dy <= rad * rad;
-  }
-
-  function ring(x, y, cx, cy, rOuter, rInner) {
-    const dx = x - cx, dy = y - cy;
-    const d2 = dx * dx + dy * dy;
-    return d2 <= rOuter * rOuter && d2 >= rInner * rInner;
-  }
-
-  const s = size / 256;
-  const ringsDef = [
-    { cx: 90 * s, cy: 128 * s, rOuter: 56 * s, rInner: 40 * s },
-    { cx: 166 * s, cy: 128 * s, rOuter: 56 * s, rInner: 40 * s }
-  ];
-
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const i = (y * size + x) * 4;
-      if (!inRounded(x, y, 0, 0, size - 1, size - 1, r)) {
-        px[i + 3] = 0;
-        continue;
-      }
-      let c = bg, a = 255;
-      for (const rg of ringsDef) {
-        if (ring(x, y, rg.cx, rg.cy, rg.rOuter, rg.rInner)) { c = [255, 255, 255]; a = 240; break; }
-      }
-      px[i] = c[0]; px[i + 1] = c[1]; px[i + 2] = c[2]; px[i + 3] = a;
-    }
-  }
-
-  const raw = Buffer.alloc(size * (size * 4 + 1));
-  for (let y = 0; y < size; y++) {
-    raw[y * (size * 4 + 1)] = 0;
-    px.copy(raw, y * (size * 4 + 1) + 1, y * size * 4, (y + 1) * size * 4);
-  }
-  const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(size, 0);
-  ihdr.writeUInt32BE(size, 4);
-  ihdr[8] = 8; ihdr[9] = 6;
-  return Buffer.concat([
-    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-    chunk('IHDR', ihdr),
-    chunk('IDAT', zlib.deflateSync(raw, { level: 9 })),
-    chunk('IEND', Buffer.alloc(0))
-  ]);
-}
-
 function makeIco(png) {
   const header = Buffer.alloc(6);
   header.writeUInt16LE(0, 0);
@@ -231,8 +174,8 @@ function makeCodexPng(size) {
 }
 
 const dir = path.join(__dirname, 'assets');
-fs.writeFileSync(path.join(dir, 'icon.ico'), makeIco(makePng(256)));
-fs.writeFileSync(path.join(dir, 'icon.png'), makePng(256));
+fs.writeFileSync(path.join(dir, 'icon.ico'), makeIco(makeStarTrayPng(256)));
+fs.writeFileSync(path.join(dir, 'icon.png'), makeStarTrayPng(256));
 fs.writeFileSync(path.join(dir, 'tray.png'), makeStarTrayPng(32));
 
 fs.writeFileSync(path.join(dir, 'codex-icon.ico'), makeIco(makeCodexPng(256)));
