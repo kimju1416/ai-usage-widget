@@ -376,6 +376,20 @@ async function pollProvider(providerKey) {
           result = await win.webContents.executeJavaScript(provider.extractScript);
         }
 
+        // 값을 찾긴 했어도(ok=true) 페이지가 아직 이전/캐시된 숫자를 보여주는 과도기일 수 있다.
+        // (Codex에서 100%가 잠깐 낮게 표시됐다가 다음 폴링에 다시 돌아오는 현상 확인됨)
+        // 한 번 더 확인해서 값이 안정됐는지 검증하고, 두 번째 값을 최종값으로 채택한다.
+        if (result.ok) {
+          await new Promise((r) => setTimeout(r, 1500));
+          const confirm = await win.webContents.executeJavaScript(provider.extractScript);
+          if (confirm.ok) {
+            if (confirm.session.pct !== result.session.pct || confirm.weekly.pct !== result.weekly.pct) {
+              debugLog(`[${providerKey}] 값 안정화 재확인: ${result.session.pct}/${result.weekly.pct} → ${confirm.session.pct}/${confirm.weekly.pct} (두번째 값 채택)`);
+            }
+            result = confirm;
+          }
+        }
+
         // 타임아웃으로 이미 다음 세대가 시작된 뒤 뒤늦게 끝난 결과라면, 최신 데이터를 덮어쓰지 않고 버린다
         if (myGeneration !== pollGeneration[providerKey]) {
           debugLog(`[${providerKey}] poll 결과 폐기: 이미 다음 세대(${pollGeneration[providerKey]})가 진행 중 (내 세대 ${myGeneration})`);
