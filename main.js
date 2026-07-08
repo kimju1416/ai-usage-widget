@@ -155,7 +155,8 @@ function widgetWidthFor(showFable) {
 function sectionHeightFor(key) {
   const data = lastData[key];
   const needsLoginBtn = !data || data.needsLogin;
-  return needsLoginBtn ? 152 : 128;
+  // 재설정 시각 문구가 좁은 폭(Fable 꺼짐 등)에서 두 줄로 줄바꿈될 때도 안 잘리도록 여유를 둔다
+  return needsLoginBtn ? 152 : 140;
 }
 
 function widgetSizeFor() {
