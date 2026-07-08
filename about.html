@@ -1,0 +1,80 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>사용법</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: #1c1917;
+    color: #f5f0ea;
+    font-family: "Segoe UI", "Malgun Gothic", sans-serif;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+  #wrap { padding: 16px 20px; }
+  .header { display: flex; align-items: center; gap: 8px; margin-bottom: 3px; }
+  .header svg { flex-shrink: 0; }
+  h1 { font-size: 16px; margin: 0; font-weight: 700; }
+  .sub { font-size: 11px; color: #93897c; margin: 0 0 12px; }
+  h2 { font-size: 12px; color: #d8cfc2; margin: 12px 0 5px; font-weight: 700; }
+  ol, ul { margin: 0; padding-left: 18px; font-size: 12px; line-height: 1.5; color: #e7e0d6; }
+  li { margin-bottom: 3px; }
+  .tip { font-size: 11px; color: #93897c; margin-top: 8px; line-height: 1.45; }
+  .footer {
+    margin-top: 14px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(255,255,255,0.08);
+    font-size: 11px;
+    color: #93897c;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .footer a { color: #22d3ee; text-decoration: none; }
+  .footer a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+  <div id="wrap">
+    <div class="header">
+      <svg width="20" height="20" viewBox="0 0 24 24">
+        <rect x="0" y="0" width="24" height="24" rx="6" fill="#EEECE1" />
+        <g stroke="#D97757" stroke-width="2.6" stroke-linecap="round">
+          <line x1="12" y1="3" x2="12" y2="21" />
+          <line x1="3" y1="12" x2="21" y2="12" />
+          <line x1="5.8" y1="5.8" x2="18.2" y2="18.2" />
+          <line x1="5.8" y1="18.2" x2="18.2" y2="5.8" />
+        </g>
+      </svg>
+      <h1>AI 사용량 위젯</h1>
+    </div>
+    <p class="sub">Claude · Codex 5시간/주간 사용량을 항상 화면에</p>
+
+    <h2>처음 시작하기</h2>
+    <ol>
+      <li>트레이 아이콘 우클릭</li>
+      <li>"Claude 로그인 창 열기" 또는 "Codex 로그인 창 열기" 클릭</li>
+      <li>평소처럼 로그인 (Google / 이메일 / SSO 등)</li>
+      <li>로그인 완료되면 창이 자동으로 닫히고 실제 사용량이 표시돼요</li>
+    </ol>
+
+    <h2>트레이 메뉴 살펴보기</h2>
+    <ul>
+      <li><b>위젯 카드로 보기 / 트레이 아이콘으로만 보기</b> — 표시 방식 선택</li>
+      <li><b>항상 위로 고정</b> — 켜면 다른 창 위에 항상 떠 있음</li>
+      <li><b>위젯 투명도 / 색상 테마</b> — 취향대로 꾸미기</li>
+      <li><b>Claude 표시 / Codex 표시</b> — 서비스별로 켜고 끄기</li>
+      <li><b>지금 새로고침</b> — 즉시 다시 불러오기</li>
+    </ul>
+
+    <p class="tip">위젯 카드는 아무 곳이나 드래그해서 원하는 위치로 옮길 수 있어요. 로그인 세션은 앱에 저장되어 다시 로그인할 필요가 없어요.</p>
+
+    <div class="footer">
+      <span>Made by kimju.zip</span>
+      <a href="https://instagram.com/kimju.zip" target="_blank">Instagram ↗</a>
+    </div>
+  </div>
+</body>
+</html>

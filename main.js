@@ -229,6 +229,33 @@ function createWidgetWindow() {
   widgetWin.webContents.once('did-finish-load', () => sendToWidget());
 }
 
+let aboutWin = null;
+
+function openAboutWindow() {
+  if (aboutWin && !aboutWin.isDestroyed()) {
+    aboutWin.show();
+    aboutWin.focus();
+    return;
+  }
+  aboutWin = new BrowserWindow({
+    width: 400,
+    height: 600,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    title: '사용법',
+    icon: path.join(__dirname, 'assets', 'icon.ico'),
+    webPreferences: { contextIsolation: true, nodeIntegration: false }
+  });
+  aboutWin.setMenuBarVisibility(false);
+  aboutWin.webContents.setWindowOpenHandler(({ url }) => {
+    shell.openExternal(url);
+    return { action: 'deny' };
+  });
+  aboutWin.loadFile('about.html');
+  aboutWin.on('closed', () => { aboutWin = null; });
+}
+
 function createWorkerWindow(providerKey) {
   const win = new BrowserWindow({
     show: false,
@@ -486,9 +513,7 @@ function createTray() {
           app.setLoginItemSettings({ openAtLogin: menuItem.checked });
         }
       },
-      { type: 'separator' },
-      { label: 'Claude 사용량 페이지 열기(브라우저)', click: () => shell.openExternal(PROVIDERS.claude.usageUrl()) },
-      { label: 'Codex 사용량 페이지 열기(브라우저)', click: () => shell.openExternal(PROVIDERS.codex.usageUrl()) },
+      { label: '사용법', click: () => openAboutWindow() },
       { label: '디버그 로그 열기', click: () => shell.openPath(debugLogFile) },
       { type: 'separator' },
       { label: '종료', click: () => { app.quit(); } }
