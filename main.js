@@ -335,12 +335,15 @@ async function pollProvider(providerKey) {
     return;
   }
   pollInFlight[providerKey] = true;
+  debugLog(`[${providerKey}] pollProvider 시작`);
   const provider = PROVIDERS[providerKey];
   const win = getWorkerWindow(providerKey);
+  debugLog(`[${providerKey}] getWorkerWindow 완료, loadURL 시작`);
   try {
     await withTimeout(
       (async () => {
         await win.loadURL(provider.usageUrl());
+        debugLog(`[${providerKey}] loadURL 완료`);
         await new Promise((r) => setTimeout(r, 2500));
         let result = await win.webContents.executeJavaScript(provider.extractScript);
 
@@ -569,8 +572,11 @@ if (!gotLock) {
   });
 
   app.whenReady().then(() => {
+    debugLog('=== app ready, startup 시작 ===');
     createWidgetWindow();
+    debugLog('createWidgetWindow 완료');
     createTray();
+    debugLog('createTray 완료, pollAll 호출');
 
     pollAll();
     pollTimer = setInterval(pollAll, POLL_INTERVAL_MS);
