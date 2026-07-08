@@ -10,17 +10,25 @@ const debugLogFile = path.join(userDataPath, 'debug.log');
 
 const MAX_DEBUG_LOG_BYTES = 500 * 1024;
 
+// 메인 프로세스를 블로킹하지 않도록 전부 비동기로 처리 — 디스크 지연(OneDrive 동기화 등)이
+// 폴링 자체를 지연시키는 일이 없게 한다. 실패해도 무시(로그는 진단용일 뿐 기능에 영향 없음).
+let debugLogTrimming = false;
 function debugLog(msg) {
-  try {
-    const stat = fs.existsSync(debugLogFile) ? fs.statSync(debugLogFile) : null;
-    if (stat && stat.size > MAX_DEBUG_LOG_BYTES) {
-      const tail = fs.readFileSync(debugLogFile, 'utf-8').slice(-MAX_DEBUG_LOG_BYTES / 2);
-      fs.writeFileSync(debugLogFile, tail);
-    }
-    fs.appendFileSync(debugLogFile, `[${new Date().toISOString()}] ${msg}\n`);
-  } catch (e) {
-    // 무시
-  }
+  const line = `[${new Date().toISOString()}] ${msg}\n`;
+  fs.appendFile(debugLogFile, line, (err) => {
+    if (err || debugLogTrimming) return;
+    fs.stat(debugLogFile, (statErr, stat) => {
+      if (statErr || !stat || stat.size <= MAX_DEBUG_LOG_BYTES) return;
+      debugLogTrimming = true;
+      fs.readFile(debugLogFile, 'utf-8', (readErr, content) => {
+        if (!readErr) {
+          fs.writeFile(debugLogFile, content.slice(-MAX_DEBUG_LOG_BYTES / 2), () => { debugLogTrimming = false; });
+        } else {
+          debugLogTrimming = false;
+        }
+      });
+    });
+  });
 }
 
 let widgetWin = null;
@@ -318,6 +326,8 @@ function sendToWidget() {
 
 const POLL_TIMEOUT_MS = 25 * 1000; // 폴링 1회 최대 허용 시간 — 이보다 오래 걸리면 강제로 실패 처리하고 다음 주기를 위해 놓아준다
 const pollInFlight = { claude: false, codex: false };
+const pollGeneration = { claude: 0, codex: 0 }; // 타임아웃난 이전 폴링이 뒤늦게 끝나 최신 결과를 덮어쓰는 것을 막기 위한 세대 토큰
+const loginInFlight = { claude: false, codex: false }; // 로그인 창이 열려있는 동안엔 같은 워커 창을 폴링이 건드리지 않게 함
 
 function withTimeout(promise, ms, label) {
   return new Promise((resolve, reject) => {
@@ -329,12 +339,25 @@ function withTimeout(promise, ms, label) {
   });
 }
 
+// 오류 진단용 스니펫에서 이메일 등 개인정보로 보이는 패턴을 지운다 — 이 로그는 사용자가
+// "디버그 로그 열기"로 직접 열어보거나 캡처해 공유할 수 있는 평문 파일이라 최소한의 마스킹을 한다.
+function maskSensitive(text) {
+  return String(text)
+    .replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, '[email]')
+    .slice(0, 120);
+}
+
 async function pollProvider(providerKey) {
   if (pollInFlight[providerKey]) {
     debugLog(`[${providerKey}] poll skip: 이전 폴링이 아직 진행 중`);
     return;
   }
+  if (loginInFlight[providerKey]) {
+    debugLog(`[${providerKey}] poll skip: 로그인 진행 중`);
+    return;
+  }
   pollInFlight[providerKey] = true;
+  const myGeneration = ++pollGeneration[providerKey];
   debugLog(`[${providerKey}] pollProvider 시작`);
   const provider = PROVIDERS[providerKey];
   const win = getWorkerWindow(providerKey);
@@ -353,13 +376,19 @@ async function pollProvider(providerKey) {
           result = await win.webContents.executeJavaScript(provider.extractScript);
         }
 
+        // 타임아웃으로 이미 다음 세대가 시작된 뒤 뒤늦게 끝난 결과라면, 최신 데이터를 덮어쓰지 않고 버린다
+        if (myGeneration !== pollGeneration[providerKey]) {
+          debugLog(`[${providerKey}] poll 결과 폐기: 이미 다음 세대(${pollGeneration[providerKey]})가 진행 중 (내 세대 ${myGeneration})`);
+          return;
+        }
+
         if (result.ok) {
           const fableStr = result.fable ? ` fable=${result.fable.pct}%` : '';
           debugLog(`[${providerKey}] poll ok=true 5h=${result.session.pct}% 7d=${result.weekly.pct}%${fableStr}`);
         } else {
           const url = win.webContents.getURL();
           const snippet = await win.webContents.executeJavaScript('(document.body.innerText||"").slice(0,300)');
-          debugLog(`[${providerKey}] poll ok=false needsLogin=${result.needsLogin} url=${url} snippet=${JSON.stringify(snippet)}`);
+          debugLog(`[${providerKey}] poll ok=false needsLogin=${result.needsLogin} url=${url} snippet=${JSON.stringify(maskSensitive(snippet))}`);
         }
         lastData[providerKey] = result;
       })(),
@@ -367,12 +396,18 @@ async function pollProvider(providerKey) {
       `${providerKey} poll`
     );
   } catch (e) {
-    debugLog(`[${providerKey}] poll error: ${e.message}`);
-    lastData[providerKey] = { ok: false, needsLogin: false, session: null, weekly: null, fable: null };
+    if (myGeneration === pollGeneration[providerKey]) {
+      debugLog(`[${providerKey}] poll error: ${e.message}`);
+      lastData[providerKey] = { ok: false, needsLogin: false, session: null, weekly: null, fable: null };
+    }
+    // 타임아웃 시 워커 창에 남은 요청을 실제로 끊어서, 좀비 프로미스가 다음 폴링 창을 계속 붙잡지 않게 한다
+    if (win && !win.isDestroyed()) {
+      try { win.webContents.stop(); } catch (_) { /* 무시 */ }
+    }
   } finally {
     pollInFlight[providerKey] = false;
   }
-  sendToWidget();
+  if (myGeneration === pollGeneration[providerKey]) sendToWidget();
 }
 
 async function pollAll() {
@@ -385,6 +420,7 @@ async function pollAll() {
 function openLoginWindow(providerKey) {
   const provider = PROVIDERS[providerKey];
   const win = getWorkerWindow(providerKey);
+  loginInFlight[providerKey] = true; // 로그인 흐름이 끝날 때까지 이 provider의 일반 폴링은 같은 창을 건드리지 않게 막는다
   win.show();
   win.focus();
   win.loadURL(provider.loginUrl);
@@ -401,6 +437,7 @@ function openLoginWindow(providerKey) {
     if (!w || w.isDestroyed() || tries > maxTries) {
       clearInterval(check);
       loginCheckInFlight[providerKey] = false;
+      loginInFlight[providerKey] = false;
       return;
     }
     try {
@@ -415,6 +452,7 @@ function openLoginWindow(providerKey) {
         debugLog(`[${providerKey}] 로그인 후 사용량 추출: ok=${result.ok}`);
         w.hide();
         lastData[providerKey] = result;
+        loginInFlight[providerKey] = false;
         sendToWidget();
       }
     } catch (e) {
