@@ -316,32 +316,58 @@ function sendToWidget() {
   }
 }
 
+const POLL_TIMEOUT_MS = 25 * 1000; // 폴링 1회 최대 허용 시간 — 이보다 오래 걸리면 강제로 실패 처리하고 다음 주기를 위해 놓아준다
+const pollInFlight = { claude: false, codex: false };
+
+function withTimeout(promise, ms, label) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`timeout: ${label}`)), ms);
+    promise.then(
+      (v) => { clearTimeout(timer); resolve(v); },
+      (e) => { clearTimeout(timer); reject(e); }
+    );
+  });
+}
+
 async function pollProvider(providerKey) {
+  if (pollInFlight[providerKey]) {
+    debugLog(`[${providerKey}] poll skip: 이전 폴링이 아직 진행 중`);
+    return;
+  }
+  pollInFlight[providerKey] = true;
   const provider = PROVIDERS[providerKey];
   const win = getWorkerWindow(providerKey);
   try {
-    await win.loadURL(provider.usageUrl());
-    await new Promise((r) => setTimeout(r, 2500));
-    let result = await win.webContents.executeJavaScript(provider.extractScript);
+    await withTimeout(
+      (async () => {
+        await win.loadURL(provider.usageUrl());
+        await new Promise((r) => setTimeout(r, 2500));
+        let result = await win.webContents.executeJavaScript(provider.extractScript);
 
-    // 사용량 화면이 늦게 열리는 경우가 있어, 실패했지만 로그아웃도 아니면 한 번 더 대기 후 재시도
-    if (!result.ok && !result.needsLogin) {
-      await new Promise((r) => setTimeout(r, 2500));
-      result = await win.webContents.executeJavaScript(provider.extractScript);
-    }
+        // 사용량 화면이 늦게 열리는 경우가 있어, 실패했지만 로그아웃도 아니면 한 번 더 대기 후 재시도
+        if (!result.ok && !result.needsLogin) {
+          await new Promise((r) => setTimeout(r, 2500));
+          result = await win.webContents.executeJavaScript(provider.extractScript);
+        }
 
-    if (result.ok) {
-      const fableStr = result.fable ? ` fable=${result.fable.pct}%` : '';
-      debugLog(`[${providerKey}] poll ok=true 5h=${result.session.pct}% 7d=${result.weekly.pct}%${fableStr}`);
-    } else {
-      const url = win.webContents.getURL();
-      const snippet = await win.webContents.executeJavaScript('(document.body.innerText||"").slice(0,300)');
-      debugLog(`[${providerKey}] poll ok=false needsLogin=${result.needsLogin} url=${url} snippet=${JSON.stringify(snippet)}`);
-    }
-    lastData[providerKey] = result;
+        if (result.ok) {
+          const fableStr = result.fable ? ` fable=${result.fable.pct}%` : '';
+          debugLog(`[${providerKey}] poll ok=true 5h=${result.session.pct}% 7d=${result.weekly.pct}%${fableStr}`);
+        } else {
+          const url = win.webContents.getURL();
+          const snippet = await win.webContents.executeJavaScript('(document.body.innerText||"").slice(0,300)');
+          debugLog(`[${providerKey}] poll ok=false needsLogin=${result.needsLogin} url=${url} snippet=${JSON.stringify(snippet)}`);
+        }
+        lastData[providerKey] = result;
+      })(),
+      POLL_TIMEOUT_MS,
+      `${providerKey} poll`
+    );
   } catch (e) {
     debugLog(`[${providerKey}] poll error: ${e.message}`);
     lastData[providerKey] = { ok: false, needsLogin: false, session: null, weekly: null, fable: null };
+  } finally {
+    pollInFlight[providerKey] = false;
   }
   sendToWidget();
 }
