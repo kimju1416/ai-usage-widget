@@ -64,6 +64,11 @@ function getOpacity() {
   return typeof v === 'number' ? v : 1;
 }
 
+function getAlwaysOnTop() {
+  const v = loadState().alwaysOnTop;
+  return typeof v === 'boolean' ? v : true; // 기본값: 항상 위로 고정
+}
+
 function getShowFable() {
   return loadState().showFable === true;
 }
@@ -150,7 +155,7 @@ function widgetWidthFor(showFable) {
 function sectionHeightFor(key) {
   const data = lastData[key];
   const needsLoginBtn = !data || data.needsLogin;
-  return needsLoginBtn ? 156 : 138;
+  return needsLoginBtn ? 152 : 128;
 }
 
 function widgetSizeFor() {
@@ -162,9 +167,9 @@ function widgetSizeFor() {
     168
   );
   const sectionCount = (claudeOn ? 1 : 0) + (codexOn ? 1 : 0);
-  const chrome = 26;
+  const chrome = 22;
   const sectionsHeight = (claudeOn ? sectionHeightFor('claude') : 0) + (codexOn ? sectionHeightFor('codex') : 0);
-  const gap = sectionCount > 1 ? 10 : 0;
+  const gap = sectionCount > 1 ? 8 : 0;
   const height = Math.max(chrome + sectionsHeight + gap, 168);
   return { width, height };
 }
@@ -191,7 +196,7 @@ function createWidgetWindow() {
     // 카드 배경이 불투명이라 어떤 틈도 생길 수 없다.
     backgroundColor: '#1c1917',
     resizable: false,
-    alwaysOnTop: true,
+    alwaysOnTop: getAlwaysOnTop(),
     skipTaskbar: true,
     show: getMode() === 'widget',
     opacity: getOpacity(),
@@ -205,7 +210,7 @@ function createWidgetWindow() {
   });
 
   widgetWin.setTitle('');
-  widgetWin.setAlwaysOnTop(true, 'screen-saver');
+  if (getAlwaysOnTop()) widgetWin.setAlwaysOnTop(true, 'screen-saver');
   widgetWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   widgetWin.loadFile('widget.html');
 
@@ -378,6 +383,13 @@ function applyOpacity(opacity) {
   }
 }
 
+function applyAlwaysOnTop(alwaysOnTop) {
+  saveState({ alwaysOnTop });
+  if (widgetWin && !widgetWin.isDestroyed()) {
+    widgetWin.setAlwaysOnTop(alwaysOnTop, alwaysOnTop ? 'screen-saver' : undefined);
+  }
+}
+
 function applyShowFable(showFable) {
   saveState({ showFable });
   sendToWidget();
@@ -433,6 +445,12 @@ function createTray() {
         type: 'radio',
         checked: mode === 'tray',
         click: () => { applyMode('tray'); tray.setContextMenu(buildMenu()); }
+      },
+      {
+        label: '항상 위로 고정',
+        type: 'checkbox',
+        checked: getAlwaysOnTop(),
+        click: (menuItem) => { applyAlwaysOnTop(menuItem.checked); }
       },
       { label: '위젯 투명도', submenu: opacityMenu },
       { label: '색상 테마', submenu: themeMenu },
