@@ -1,0 +1,257 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title></title>
+<style>
+  * { box-sizing: border-box; -webkit-user-select: none; user-select: none; }
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #1c1917;
+    font-family: "Segoe UI", "Malgun Gothic", sans-serif;
+    overflow: hidden;
+  }
+  #card {
+    position: relative;
+    width: 100%; height: 100%;
+    background: #1c1917;
+    -webkit-app-region: drag;
+    padding: 8px 8px 6px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    color: #f5f0ea;
+  }
+  #refreshBtn {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    -webkit-app-region: no-drag;
+    cursor: pointer;
+    opacity: 0.6;
+    font-size: 11px;
+    color: #b8afa4;
+    padding: 2px 4px;
+  }
+  #refreshBtn:hover { opacity: 1; }
+  .section { display: none; flex-direction: column; align-items: center; width: 100%; }
+  .section.on { display: flex; }
+  .section + .section.on { margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.08); }
+  .section-header { display: flex; align-items: center; gap: 5px; font-size: 10px; color: #b8afa4; font-weight: 600; margin-bottom: 4px; align-self: flex-start; }
+  .rings {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    -webkit-app-region: drag;
+  }
+  .ring-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  svg { display: block; }
+  .ring-label { font-size: 10px; color: #d8cfc2; margin-top: 2px; }
+  .ring-reset { font-size: 9px; color: #93897c; margin-top: 1px; text-align: center; line-height: 1.2; }
+  .pct-text { font-size: 15px; font-weight: 700; }
+  .fableWrap { display: none; }
+  .section-status { font-size: 9px; color: #8a8078; margin-top: 4px; }
+  .login-btn {
+    -webkit-app-region: no-drag;
+    margin-top: 4px;
+    font-size: 10px;
+    background: #d97706;
+    color: #1c1917;
+    border: none;
+    border-radius: 6px;
+    padding: 3px 8px;
+    cursor: pointer;
+    display: none;
+  }
+  #status { font-size: 9px; color: #8a8078; margin-top: 6px; }
+</style>
+</head>
+<body>
+  <div id="card">
+    <span id="refreshBtn" title="새로고침">⟳</span>
+
+    <div class="section" id="claudeSection" data-provider="claude">
+      <div class="section-header">
+        <svg width="14" height="12" viewBox="0 0 24 20">
+          <g transform="rotate(-8 12 10)" fill="#DB7C52">
+            <rect x="3" y="6" width="18" height="9" />
+            <rect x="6" y="2" width="4" height="5" />
+            <rect x="14" y="2" width="4" height="5" />
+            <rect x="5" y="15" width="3" height="4" />
+            <rect x="10.5" y="15" width="3" height="4" />
+            <rect x="16" y="15" width="3" height="4" />
+            <rect x="8" y="9" width="2.2" height="4" fill="#241c17" />
+            <rect x="14" y="9" width="2.2" height="4" fill="#241c17" />
+          </g>
+        </svg>
+        <span>Claude</span>
+      </div>
+      <div class="rings">
+        <div class="ring-wrap">
+          <svg width="64" height="64" viewBox="0 0 64 64">
+            <circle cx="32" cy="32" r="27" stroke="#44403c" stroke-width="7" fill="none" />
+            <circle id="claude-sessionArc" cx="32" cy="32" r="27" stroke="#3b82f6" stroke-width="7" fill="none"
+              stroke-linecap="round" transform="rotate(-90 32 32)" stroke-dasharray="169.6" stroke-dashoffset="169.6" />
+            <text id="claude-sessionPct" x="32" y="37" text-anchor="middle" class="pct-text" fill="#f5f0ea" font-size="15">--%</text>
+          </svg>
+          <div class="ring-label">5시간 세션</div>
+          <div class="ring-reset" id="claude-sessionReset">-</div>
+        </div>
+        <div class="ring-wrap fableWrap" id="fableWrap">
+          <svg width="64" height="64" viewBox="0 0 64 64">
+            <circle cx="32" cy="32" r="27" stroke="#44403c" stroke-width="7" fill="none" />
+            <circle id="claude-fableArc" cx="32" cy="32" r="27" stroke="#3b82f6" stroke-width="7" fill="none"
+              stroke-linecap="round" transform="rotate(-90 32 32)" stroke-dasharray="169.6" stroke-dashoffset="169.6" />
+            <text id="claude-fablePct" x="32" y="37" text-anchor="middle" class="pct-text" fill="#f5f0ea" font-size="15">--%</text>
+          </svg>
+          <div class="ring-label">Fable</div>
+          <div class="ring-reset" id="claude-fableReset">-</div>
+        </div>
+        <div class="ring-wrap">
+          <svg width="64" height="64" viewBox="0 0 64 64">
+            <circle cx="32" cy="32" r="27" stroke="#44403c" stroke-width="7" fill="none" />
+            <circle id="claude-weeklyArc" cx="32" cy="32" r="27" stroke="#3b82f6" stroke-width="7" fill="none"
+              stroke-linecap="round" transform="rotate(-90 32 32)" stroke-dasharray="169.6" stroke-dashoffset="169.6" />
+            <text id="claude-weeklyPct" x="32" y="37" text-anchor="middle" class="pct-text" fill="#f5f0ea" font-size="15">--%</text>
+          </svg>
+          <div class="ring-label">주간 한도</div>
+          <div class="ring-reset" id="claude-weeklyReset">-</div>
+        </div>
+      </div>
+      <div class="section-status" id="claude-status">불러오는 중...</div>
+      <button class="login-btn" id="claude-loginBtn">로그인 필요 &rarr; 클릭</button>
+    </div>
+
+    <div class="section" id="codexSection" data-provider="codex">
+      <div class="section-header">
+        <svg width="14" height="12" viewBox="0 0 24 20">
+          <defs>
+            <linearGradient id="codexGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#7c8cff" />
+              <stop offset="1" stop-color="#463cd2" />
+            </linearGradient>
+          </defs>
+          <g fill="url(#codexGrad)">
+            <circle cx="12" cy="11" r="7" />
+            <circle cx="6" cy="7" r="3.4" />
+            <circle cx="18" cy="7" r="3.4" />
+            <circle cx="5" cy="14" r="3" />
+            <circle cx="19" cy="14" r="3" />
+          </g>
+          <path d="M8 7.5 L11.5 11 L8 14.5" stroke="#fff" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round" />
+          <line x1="12.5" y1="14.5" x2="17" y2="14.5" stroke="#fff" stroke-width="1.8" stroke-linecap="round" />
+        </svg>
+        <span>Codex</span>
+      </div>
+      <div class="rings">
+        <div class="ring-wrap">
+          <svg width="64" height="64" viewBox="0 0 64 64">
+            <circle cx="32" cy="32" r="27" stroke="#44403c" stroke-width="7" fill="none" />
+            <circle id="codex-sessionArc" cx="32" cy="32" r="27" stroke="#3b82f6" stroke-width="7" fill="none"
+              stroke-linecap="round" transform="rotate(-90 32 32)" stroke-dasharray="169.6" stroke-dashoffset="169.6" />
+            <text id="codex-sessionPct" x="32" y="37" text-anchor="middle" class="pct-text" fill="#f5f0ea" font-size="15">--%</text>
+          </svg>
+          <div class="ring-label">5시간 한도</div>
+          <div class="ring-reset" id="codex-sessionReset">-</div>
+        </div>
+        <div class="ring-wrap">
+          <svg width="64" height="64" viewBox="0 0 64 64">
+            <circle cx="32" cy="32" r="27" stroke="#44403c" stroke-width="7" fill="none" />
+            <circle id="codex-weeklyArc" cx="32" cy="32" r="27" stroke="#3b82f6" stroke-width="7" fill="none"
+              stroke-linecap="round" transform="rotate(-90 32 32)" stroke-dasharray="169.6" stroke-dashoffset="169.6" />
+            <text id="codex-weeklyPct" x="32" y="37" text-anchor="middle" class="pct-text" fill="#f5f0ea" font-size="15">--%</text>
+          </svg>
+          <div class="ring-label">주간 한도</div>
+          <div class="ring-reset" id="codex-weeklyReset">-</div>
+        </div>
+      </div>
+      <div class="section-status" id="codex-status">불러오는 중...</div>
+      <button class="login-btn" id="codex-loginBtn">로그인 필요 &rarr; 클릭</button>
+    </div>
+
+    <div id="status">-</div>
+  </div>
+
+<script>
+  const CIRC = 2 * Math.PI * 27; // 169.6
+
+  const THEMES = {
+    vivid: { session: '#22d3ee', fable: '#ff2fa0', weekly: '#facc15' },
+    muted: { session: '#a39889', fable: '#a39889', weekly: '#a39889' }
+  };
+
+  function setRing(arcEl, pctEl, pct, color) {
+    const clamped = Math.max(0, Math.min(100, pct));
+    const offset = CIRC * (1 - clamped / 100);
+    arcEl.setAttribute('stroke-dashoffset', offset.toFixed(1));
+    arcEl.setAttribute('stroke', color);
+    pctEl.textContent = clamped + '%';
+  }
+
+  document.getElementById('refreshBtn').addEventListener('click', () => {
+    document.getElementById('status').textContent = '새로고침 중...';
+    window.widgetAPI.refreshNow();
+  });
+  document.getElementById('claude-loginBtn').addEventListener('click', () => window.widgetAPI.openLogin('claude'));
+  document.getElementById('codex-loginBtn').addEventListener('click', () => window.widgetAPI.openLogin('codex'));
+
+  function renderSection(prefix, data, theme, showFable) {
+    const loginBtn = document.getElementById(prefix + '-loginBtn');
+    const statusEl = document.getElementById(prefix + '-status');
+
+    if (prefix === 'claude') {
+      document.getElementById('fableWrap').style.display = showFable ? 'flex' : 'none';
+    }
+
+    if (!data) {
+      loginBtn.style.display = 'none';
+      statusEl.textContent = '불러오는 중...';
+      return;
+    }
+    if (data.needsLogin) {
+      loginBtn.style.display = 'inline-block';
+      statusEl.textContent = '로그인이 필요해요';
+      return;
+    }
+    loginBtn.style.display = 'none';
+
+    if (data.session && data.session.pct !== null) {
+      setRing(document.getElementById(prefix + '-sessionArc'), document.getElementById(prefix + '-sessionPct'), data.session.pct, theme.session);
+      document.getElementById(prefix + '-sessionReset').textContent = data.session.reset;
+    }
+    if (data.weekly && data.weekly.pct !== null) {
+      setRing(document.getElementById(prefix + '-weeklyArc'), document.getElementById(prefix + '-weeklyPct'), data.weekly.pct, theme.weekly);
+      document.getElementById(prefix + '-weeklyReset').textContent = data.weekly.reset;
+    }
+
+    if (prefix === 'claude' && showFable && data.fable && data.fable.pct !== null) {
+      setRing(document.getElementById('claude-fableArc'), document.getElementById('claude-fablePct'), data.fable.pct, theme.fable);
+      document.getElementById('claude-fableReset').textContent = data.fable.reset;
+    }
+
+    statusEl.textContent = data.ok ? '' : '데이터를 읽지 못했어요';
+  }
+
+  window.widgetAPI.onUsageData((data) => {
+    const theme = THEMES[data.colorTheme] || THEMES.vivid;
+
+    document.getElementById('claudeSection').classList.toggle('on', !!data.showClaude);
+    document.getElementById('codexSection').classList.toggle('on', !!data.showCodex);
+
+    if (data.showClaude) renderSection('claude', data.claude, theme, data.showFable);
+    if (data.showCodex) renderSection('codex', data.codex, theme, false);
+
+    const anyOk = (data.showClaude && data.claude && data.claude.ok) || (data.showCodex && data.codex && data.codex.ok);
+    const statusEl = document.getElementById('status');
+    statusEl.textContent = anyOk
+      ? '업데이트: ' + new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
+      : '';
+  });
+</script>
+</body>
+</html>
