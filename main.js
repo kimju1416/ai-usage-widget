@@ -85,7 +85,7 @@ function getColorTheme() {
   return loadState().colorTheme === 'muted' ? 'muted' : 'vivid';
 }
 
-const WIDGET_SIZE_SCALE = { small: 0.85, medium: 1, large: 1.18 };
+const WIDGET_SIZE_SCALE = { small: 0.8, medium: 1, large: 1.3 };
 function getWidgetSize() {
   const v = loadState().widgetSize;
   return (v === 'small' || v === 'large') ? v : 'medium';
