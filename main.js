@@ -85,6 +85,12 @@ function getColorTheme() {
   return loadState().colorTheme === 'muted' ? 'muted' : 'vivid';
 }
 
+const WIDGET_SIZE_SCALE = { small: 0.85, medium: 1, large: 1.18 };
+function getWidgetSize() {
+  const v = loadState().widgetSize;
+  return (v === 'small' || v === 'large') ? v : 'medium';
+}
+
 function getShowProvider(key) {
   const v = loadState()['show_' + key];
   return typeof v === 'boolean' ? v : key === 'claude'; // 기본값: Claude만 켜짐
@@ -180,7 +186,8 @@ function widgetSizeFor() {
   const sectionsHeight = (claudeOn ? sectionHeightFor('claude') : 0) + (codexOn ? sectionHeightFor('codex') : 0);
   const gap = sectionCount > 1 ? 8 : 0;
   const height = Math.max(chrome + sectionsHeight + gap, 168);
-  return { width, height };
+  const scale = WIDGET_SIZE_SCALE[getWidgetSize()];
+  return { width: Math.round(width * scale), height: Math.round(height * scale) };
 }
 
 function resizeWidgetToState() {
@@ -319,7 +326,8 @@ function sendToWidget() {
       showClaude: getShowProvider('claude'),
       showCodex: getShowProvider('codex'),
       showFable: getShowFable(),
-      colorTheme: getColorTheme()
+      colorTheme: getColorTheme(),
+      sizeScale: WIDGET_SIZE_SCALE[getWidgetSize()]
     });
   }
 }
@@ -509,6 +517,11 @@ function applyColorTheme(colorTheme) {
   sendToWidget();
 }
 
+function applyWidgetSize(widgetSize) {
+  saveState({ widgetSize });
+  sendToWidget(); // resizeWidgetToState()가 새 크기로 창도 같이 리사이즈함
+}
+
 function applyShowProvider(key, value) {
   // 최소 하나는 항상 켜져 있어야 한다
   const other = key === 'claude' ? 'codex' : 'claude';
@@ -541,6 +554,17 @@ function createTray() {
       checked: colorTheme === t.key,
       click: () => { applyColorTheme(t.key); tray.setContextMenu(buildMenu()); }
     }));
+    const widgetSize = getWidgetSize();
+    const sizeMenu = [
+      { key: 'small', label: '소' },
+      { key: 'medium', label: '중' },
+      { key: 'large', label: '대' }
+    ].map((s) => ({
+      label: s.label,
+      type: 'radio',
+      checked: widgetSize === s.key,
+      click: () => { applyWidgetSize(s.key); tray.setContextMenu(buildMenu()); }
+    }));
 
     return Menu.buildFromTemplate([
       {
@@ -562,6 +586,7 @@ function createTray() {
         click: (menuItem) => { applyAlwaysOnTop(menuItem.checked); }
       },
       { label: '위젯 투명도', submenu: opacityMenu },
+      { label: '위젯 크기', submenu: sizeMenu },
       { label: '색상 테마', submenu: themeMenu },
       {
         label: '위젯에 Fable 표시',

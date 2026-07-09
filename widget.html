@@ -240,6 +240,10 @@
   window.widgetAPI.onUsageData((data) => {
     const theme = THEMES[data.colorTheme] || THEMES.vivid;
 
+    // 창 크기(main.js에서 이미 scale만큼 키움)에 맞춰 내용도 같은 비율로 확대/축소 —
+    // zoom은 CSS px 기준 레이아웃을 그대로 유지한 채 실제 픽셀만 배율만큼 채워준다.
+    document.documentElement.style.zoom = data.sizeScale || 1;
+
     document.getElementById('claudeSection').classList.toggle('on', !!data.showClaude);
     document.getElementById('codexSection').classList.toggle('on', !!data.showCodex);
 
