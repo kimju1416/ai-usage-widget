@@ -85,7 +85,7 @@ function getColorTheme() {
   return loadState().colorTheme === 'muted' ? 'muted' : 'vivid';
 }
 
-const WIDGET_SIZE_SCALE = { small: 0.8, medium: 1, large: 1.3 };
+const WIDGET_SIZE_SCALE = { small: 0.96, medium: 1.2, large: 1.56 };
 function getWidgetSize() {
   const v = loadState().widgetSize;
   return (v === 'small' || v === 'large') ? v : 'medium';
@@ -229,11 +229,14 @@ function sectionHeightFor(key) {
   const data = lastData[key];
   const needsLoginBtn = !data || data.needsLogin;
   if (getGraphStyle() === 'bar') {
-    // 막대형은 지표 1개당 대략 30px(라벨줄+막대+재설정 문구+여백)
+    // 막대형 지표 1줄 실측: bar-row-top(약 14.5) + bar-track(6) + bar-reset(약 12.5) = 약 33px,
+    // 줄 사이 margin-bottom 8px. 폰트별 줄높이 편차를 감안해 줄당 4px 여유를 둔다.
     const header = 18;
     const status = 14;
     const loginExtra = needsLoginBtn ? 20 : 0;
-    return header + metricCountFor(key) * 30 + status + loginExtra;
+    const metricCount = metricCountFor(key);
+    const rowsHeight = metricCount * 37 + (metricCount - 1) * 8;
+    return header + rowsHeight + status + loginExtra;
   }
   // 재설정 시각 문구가 좁은 폭(Fable 꺼짐 등)에서 두 줄로 줄바꿈될 때도 안 잘리도록 여유를 둔다
   return needsLoginBtn ? 152 : 140;
@@ -253,7 +256,8 @@ function widgetSizeFor() {
   const sectionCount = (claudeOn ? 1 : 0) + (codexOn ? 1 : 0) + (geminiOn ? 1 : 0);
   const chrome = 22;
   const sectionsHeight = (claudeOn ? sectionHeightFor('claude') : 0) + (codexOn ? sectionHeightFor('codex') : 0) + (geminiOn ? sectionHeightFor('gemini') : 0);
-  const gap = sectionCount > 1 ? 8 * (sectionCount - 1) : 0;
+  // .section + .section.on 은 margin-top 8 + padding-top 8 + border-top 1 = 17px를 차지한다.
+  const gap = sectionCount > 1 ? 17 * (sectionCount - 1) : 0;
   const height = Math.max(chrome + sectionsHeight + gap, 168);
   const scale = WIDGET_SIZE_SCALE[getWidgetSize()];
   return { width: Math.round(width * scale), height: Math.round(height * scale) };
