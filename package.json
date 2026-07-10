@@ -1,8 +1,8 @@
 {
   "name": "ai-usage-widget",
   "productName": "AIUsageWidget",
-  "version": "1.0.10",
-  "description": "Claude·Codex 5시간/주간 사용량을 항상 위에 떠서 보여주는 위젯",
+  "version": "1.0.11",
+  "description": "Claude·Codex·Gemini 5시간/주간 사용량을 항상 위에 떠서 보여주는 위젯",
   "main": "main.js",
   "author": "kimju.zip",
   "license": "MIT",

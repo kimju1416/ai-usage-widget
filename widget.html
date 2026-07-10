@@ -174,6 +174,46 @@
       <button class="login-btn" id="codex-loginBtn">로그인 필요 &rarr; 클릭</button>
     </div>
 
+    <div class="section" id="geminiSection" data-provider="gemini">
+      <div class="section-header">
+        <svg width="14" height="14" viewBox="0 0 24 24">
+          <defs>
+            <linearGradient id="geminiGrad" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#4285f4" />
+              <stop offset="0.5" stop-color="#9b72cb" />
+              <stop offset="1" stop-color="#d96570" />
+            </linearGradient>
+          </defs>
+          <path fill="url(#geminiGrad)" d="M12 2 C12.6 7.2 14.8 10.6 20 12 C14.8 13.4 12.6 16.8 12 22 C11.4 16.8 9.2 13.4 4 12 C9.2 10.6 11.4 7.2 12 2 Z" />
+        </svg>
+        <span>Gemini</span>
+      </div>
+      <div class="rings">
+        <div class="ring-wrap">
+          <svg width="64" height="64" viewBox="0 0 64 64">
+            <circle cx="32" cy="32" r="27" stroke="#44403c" stroke-width="7" fill="none" />
+            <circle id="gemini-sessionArc" cx="32" cy="32" r="27" stroke="#3b82f6" stroke-width="7" fill="none"
+              stroke-linecap="round" transform="rotate(-90 32 32)" stroke-dasharray="169.6" stroke-dashoffset="169.6" />
+            <text id="gemini-sessionPct" x="32" y="37" text-anchor="middle" class="pct-text" fill="#f5f0ea" font-size="15">--%</text>
+          </svg>
+          <div class="ring-label">5시간 한도</div>
+          <div class="ring-reset" id="gemini-sessionReset">-</div>
+        </div>
+        <div class="ring-wrap">
+          <svg width="64" height="64" viewBox="0 0 64 64">
+            <circle cx="32" cy="32" r="27" stroke="#44403c" stroke-width="7" fill="none" />
+            <circle id="gemini-weeklyArc" cx="32" cy="32" r="27" stroke="#3b82f6" stroke-width="7" fill="none"
+              stroke-linecap="round" transform="rotate(-90 32 32)" stroke-dasharray="169.6" stroke-dashoffset="169.6" />
+            <text id="gemini-weeklyPct" x="32" y="37" text-anchor="middle" class="pct-text" fill="#f5f0ea" font-size="15">--%</text>
+          </svg>
+          <div class="ring-label">주간 한도</div>
+          <div class="ring-reset" id="gemini-weeklyReset">-</div>
+        </div>
+      </div>
+      <div class="section-status" id="gemini-status">불러오는 중...</div>
+      <button class="login-btn" id="gemini-loginBtn">로그인 필요 &rarr; 클릭</button>
+    </div>
+
     <div id="status">-</div>
   </div>
 
@@ -199,6 +239,7 @@
   });
   document.getElementById('claude-loginBtn').addEventListener('click', () => window.widgetAPI.openLogin('claude'));
   document.getElementById('codex-loginBtn').addEventListener('click', () => window.widgetAPI.openLogin('codex'));
+  document.getElementById('gemini-loginBtn').addEventListener('click', () => window.widgetAPI.openLogin('gemini'));
 
   function renderSection(prefix, data, theme, showFable) {
     const loginBtn = document.getElementById(prefix + '-loginBtn');
@@ -246,11 +287,15 @@
 
     document.getElementById('claudeSection').classList.toggle('on', !!data.showClaude);
     document.getElementById('codexSection').classList.toggle('on', !!data.showCodex);
+    document.getElementById('geminiSection').classList.toggle('on', !!data.showGemini);
 
     if (data.showClaude) renderSection('claude', data.claude, theme, data.showFable);
     if (data.showCodex) renderSection('codex', data.codex, theme, false);
+    if (data.showGemini) renderSection('gemini', data.gemini, theme, false);
 
-    const anyOk = (data.showClaude && data.claude && data.claude.ok) || (data.showCodex && data.codex && data.codex.ok);
+    const anyOk = (data.showClaude && data.claude && data.claude.ok) ||
+      (data.showCodex && data.codex && data.codex.ok) ||
+      (data.showGemini && data.gemini && data.gemini.ok);
     const statusEl = document.getElementById('status');
     statusEl.textContent = anyOk
       ? '업데이트: ' + new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })

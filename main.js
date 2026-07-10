@@ -34,9 +34,9 @@ function debugLog(msg) {
 let widgetWin = null;
 let tray = null;
 let pollTimer = null;
-const workerWins = { claude: null, codex: null };
-const lastData = { claude: null, codex: null };
-let loginCheckInFlight = { claude: false, codex: false };
+const workerWins = { claude: null, codex: null, gemini: null };
+const lastData = { claude: null, codex: null, gemini: null };
+let loginCheckInFlight = { claude: false, codex: false, gemini: false };
 
 // 예상치 못한 오류로 트레이 상주 앱 전체가 조용히 죽어버리는 걸 방지 — 로그만 남기고 계속 실행
 process.on('uncaughtException', (err) => {
@@ -139,6 +139,44 @@ const CODEX_EXTRACT_SCRIPT = `(function(){
 const CODEX_LOGIN_CHECK_SCRIPT = `(!document.querySelector('input[type="password"]') &&
   (!!document.querySelector('div[contenteditable="true"], textarea') || /Codex/.test(document.title)))`;
 
+// gemini.google.com/usage 페이지 구조: "현재 사용량" 블록에 5시간 한도(N% 사용됨 + 초기화 시각),
+// "주간 한도" 블록에 주간 값이 있다. 두 블록 다 이미 "사용됨%" 형식이라 별도 변환이 필요없다.
+// 퍼센트/초기화 문구가 화면상 같은 줄에 있는지 다른 줄에 있는지 정확한 DOM 순서를 알 수 없어서,
+// 블록 단위로 잘라낸 뒤 그 안에서 순서에 상관없이 각각 찾는 방식으로 만들었다.
+const GEMINI_EXTRACT_SCRIPT = `(function(){
+  const text = document.body.innerText || '';
+  function block(startLabel, endLabel) {
+    const s = text.indexOf(startLabel);
+    if (s === -1) return '';
+    const from = s + startLabel.length;
+    let e = endLabel ? text.indexOf(endLabel, from) : -1;
+    if (e === -1) e = from + 400;
+    return text.slice(from, e);
+  }
+  function parse(blockText) {
+    const pctM = blockText.match(/(\\d+)%\\s*사용됨/);
+    const resetM = blockText.match(/([^\\n]*초기화)/);
+    if (!pctM) return null;
+    return { pct: parseInt(pctM[1], 10), reset: resetM ? resetM[1].trim() : '' };
+  }
+  const sessionBlock = block('현재 사용량', '주간 한도');
+  const weeklyBlock = block('주간 한도', null);
+  const session = parse(sessionBlock);
+  const weekly = parse(weeklyBlock);
+  const hasLoginForm = !session && !weekly &&
+    /Sign in|로그인|Google 계정으로 로그인/i.test(text);
+  return {
+    ok: !!(session && weekly),
+    needsLogin: !session && !weekly && hasLoginForm,
+    session: session,
+    weekly: weekly,
+    fable: null
+  };
+})()`;
+
+const GEMINI_LOGIN_CHECK_SCRIPT = `(!location.href.includes('accounts.google.com') &&
+  (!!document.querySelector('rich-textarea, div[contenteditable="true"], textarea') || /Gemini/.test(document.title)))`;
+
 const PROVIDERS = {
   claude: {
     key: 'claude',
@@ -157,8 +195,19 @@ const PROVIDERS = {
     usageUrl: () => `https://chatgpt.com/codex/cloud/settings/analytics?_w=${Date.now()}#usage`,
     extractScript: CODEX_EXTRACT_SCRIPT,
     loginCheckScript: CODEX_LOGIN_CHECK_SCRIPT
+  },
+  gemini: {
+    key: 'gemini',
+    label: 'Gemini',
+    partition: 'persist:geminiusage',
+    loginUrl: 'https://gemini.google.com/app',
+    usageUrl: () => `https://gemini.google.com/usage?_w=${Date.now()}`,
+    extractScript: GEMINI_EXTRACT_SCRIPT,
+    loginCheckScript: GEMINI_LOGIN_CHECK_SCRIPT
   }
 };
+
+const ALL_PROVIDER_KEYS = ['claude', 'codex', 'gemini'];
 
 function widgetWidthFor(showFable) {
   return showFable ? 244 : 168; // Claude 3개 원을 같은 크기로 나란히 배치할 만큼 넉넉하게
@@ -176,15 +225,17 @@ function sectionHeightFor(key) {
 function widgetSizeFor() {
   const claudeOn = getShowProvider('claude');
   const codexOn = getShowProvider('codex');
+  const geminiOn = getShowProvider('gemini');
   const width = Math.max(
     claudeOn ? widgetWidthFor(getShowFable()) : 0,
     codexOn ? 168 : 0,
+    geminiOn ? 168 : 0,
     168
   );
-  const sectionCount = (claudeOn ? 1 : 0) + (codexOn ? 1 : 0);
+  const sectionCount = (claudeOn ? 1 : 0) + (codexOn ? 1 : 0) + (geminiOn ? 1 : 0);
   const chrome = 22;
-  const sectionsHeight = (claudeOn ? sectionHeightFor('claude') : 0) + (codexOn ? sectionHeightFor('codex') : 0);
-  const gap = sectionCount > 1 ? 8 : 0;
+  const sectionsHeight = (claudeOn ? sectionHeightFor('claude') : 0) + (codexOn ? sectionHeightFor('codex') : 0) + (geminiOn ? sectionHeightFor('gemini') : 0);
+  const gap = sectionCount > 1 ? 8 * (sectionCount - 1) : 0;
   const height = Math.max(chrome + sectionsHeight + gap, 168);
   const scale = WIDGET_SIZE_SCALE[getWidgetSize()];
   return { width: Math.round(width * scale), height: Math.round(height * scale) };
@@ -297,7 +348,7 @@ function updateTray() {
   // Windows 트레이 툴팁은 글자수 제한이 있어(약 128자), reset 시각 등은 빼고 짧게 압축한다 —
   // 아니면 뒤쪽 provider(Codex) 줄이 통째로 잘려서 안 보이는 문제가 있었다.
   const lines = [];
-  for (const key of ['claude', 'codex']) {
+  for (const key of ALL_PROVIDER_KEYS) {
     if (!getShowProvider(key)) continue;
     const data = lastData[key];
     const label = PROVIDERS[key].label;
@@ -323,8 +374,10 @@ function sendToWidget() {
     widgetWin.webContents.send('usage-data', {
       claude: lastData.claude,
       codex: lastData.codex,
+      gemini: lastData.gemini,
       showClaude: getShowProvider('claude'),
       showCodex: getShowProvider('codex'),
+      showGemini: getShowProvider('gemini'),
       showFable: getShowFable(),
       colorTheme: getColorTheme(),
       sizeScale: WIDGET_SIZE_SCALE[getWidgetSize()]
@@ -333,9 +386,9 @@ function sendToWidget() {
 }
 
 const POLL_TIMEOUT_MS = 25 * 1000; // 폴링 1회 최대 허용 시간 — 이보다 오래 걸리면 강제로 실패 처리하고 다음 주기를 위해 놓아준다
-const pollInFlight = { claude: false, codex: false };
-const pollGeneration = { claude: 0, codex: 0 }; // 타임아웃난 이전 폴링이 뒤늦게 끝나 최신 결과를 덮어쓰는 것을 막기 위한 세대 토큰
-const loginInFlight = { claude: false, codex: false }; // 로그인 창이 열려있는 동안엔 같은 워커 창을 폴링이 건드리지 않게 함
+const pollInFlight = { claude: false, codex: false, gemini: false };
+const pollGeneration = { claude: 0, codex: 0, gemini: 0 }; // 타임아웃난 이전 폴링이 뒤늦게 끝나 최신 결과를 덮어쓰는 것을 막기 위한 세대 토큰
+const loginInFlight = { claude: false, codex: false, gemini: false }; // 로그인 창이 열려있는 동안엔 같은 워커 창을 폴링이 건드리지 않게 함
 
 function withTimeout(promise, ms, label) {
   return new Promise((resolve, reject) => {
@@ -433,9 +486,7 @@ async function pollProvider(providerKey) {
 }
 
 async function pollAll() {
-  const jobs = [];
-  if (getShowProvider('claude')) jobs.push(pollProvider('claude'));
-  if (getShowProvider('codex')) jobs.push(pollProvider('codex'));
+  const jobs = ALL_PROVIDER_KEYS.filter(getShowProvider).map(pollProvider);
   await Promise.all(jobs);
 }
 
@@ -524,8 +575,8 @@ function applyWidgetSize(widgetSize) {
 
 function applyShowProvider(key, value) {
   // 최소 하나는 항상 켜져 있어야 한다
-  const other = key === 'claude' ? 'codex' : 'claude';
-  if (!value && !getShowProvider(other)) return;
+  const others = ALL_PROVIDER_KEYS.filter((k) => k !== key);
+  if (!value && !others.some(getShowProvider)) return;
   saveState({ ['show_' + key]: value });
   if (value && !lastData[key]) pollProvider(key);
   sendToWidget();
@@ -607,10 +658,17 @@ function createTray() {
         checked: getShowProvider('codex'),
         click: (menuItem) => { applyShowProvider('codex', menuItem.checked); tray.setContextMenu(buildMenu()); }
       },
+      {
+        label: 'Gemini 표시',
+        type: 'checkbox',
+        checked: getShowProvider('gemini'),
+        click: (menuItem) => { applyShowProvider('gemini', menuItem.checked); tray.setContextMenu(buildMenu()); }
+      },
       { type: 'separator' },
       { label: '지금 새로고침', click: () => pollAll() },
       { label: 'Claude 로그인 창 열기', click: () => openLoginWindow('claude') },
       { label: 'Codex 로그인 창 열기', click: () => openLoginWindow('codex') },
+      { label: 'Gemini 로그인 창 열기', click: () => openLoginWindow('gemini') },
       {
         label: 'Windows 시작 시 자동 실행',
         type: 'checkbox',
@@ -635,7 +693,7 @@ function createTray() {
 }
 
 ipcMain.on('refresh-now', () => pollAll());
-ipcMain.on('open-login', (_event, providerKey) => openLoginWindow(providerKey === 'codex' ? 'codex' : 'claude'));
+ipcMain.on('open-login', (_event, providerKey) => openLoginWindow(ALL_PROVIDER_KEYS.includes(providerKey) ? providerKey : 'claude'));
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
