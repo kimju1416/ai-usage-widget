@@ -96,6 +96,10 @@ function getShowProvider(key) {
   return typeof v === 'boolean' ? v : key === 'claude'; // 기본값: Claude만 켜짐
 }
 
+function getGraphStyle() {
+  return loadState().graphStyle === 'bar' ? 'bar' : 'ring';
+}
+
 // 해시/쿼리만 다르고 나머지 URL이 같으면 Electron/Chromium이 "같은 문서 내 이동"으로 처리해
 // 페이지를 다시 로드하지 않을 수 있다. 매번 진짜로 새로 로드되도록 쿼리스트링에 타임스탬프를 섞는다.
 const CLAUDE_EXTRACT_SCRIPT = `(function(){
@@ -209,8 +213,14 @@ const PROVIDERS = {
 
 const ALL_PROVIDER_KEYS = ['claude', 'codex', 'gemini'];
 
-function widgetWidthFor(showFable) {
-  return showFable ? 244 : 168; // Claude 3개 원을 같은 크기로 나란히 배치할 만큼 넉넉하게
+function widgetWidthFor(showFable, graphStyle) {
+  // 막대형은 값을 세로로 쌓기 때문에 원 3개를 나란히 놓을 폭이 필요없다 — 항상 좁은 고정폭이면 된다.
+  if (graphStyle === 'bar') return 168;
+  return showFable ? 244 : 168; // 원형: Claude 3개 원을 같은 크기로 나란히 배치할 만큼 넉넉하게
+}
+
+function metricCountFor(key) {
+  return key === 'claude' && getShowFable() ? 3 : 2;
 }
 
 // 로그인 필요 버튼이 보일 때만 여유 공간이 더 필요하고, 로그인된 상태(그래프+상태줄만)는
@@ -218,6 +228,13 @@ function widgetWidthFor(showFable) {
 function sectionHeightFor(key) {
   const data = lastData[key];
   const needsLoginBtn = !data || data.needsLogin;
+  if (getGraphStyle() === 'bar') {
+    // 막대형은 지표 1개당 대략 30px(라벨줄+막대+재설정 문구+여백)
+    const header = 18;
+    const status = 14;
+    const loginExtra = needsLoginBtn ? 20 : 0;
+    return header + metricCountFor(key) * 30 + status + loginExtra;
+  }
   // 재설정 시각 문구가 좁은 폭(Fable 꺼짐 등)에서 두 줄로 줄바꿈될 때도 안 잘리도록 여유를 둔다
   return needsLoginBtn ? 152 : 140;
 }
@@ -226,8 +243,9 @@ function widgetSizeFor() {
   const claudeOn = getShowProvider('claude');
   const codexOn = getShowProvider('codex');
   const geminiOn = getShowProvider('gemini');
+  const graphStyle = getGraphStyle();
   const width = Math.max(
-    claudeOn ? widgetWidthFor(getShowFable()) : 0,
+    claudeOn ? widgetWidthFor(getShowFable(), graphStyle) : 0,
     codexOn ? 168 : 0,
     geminiOn ? 168 : 0,
     168
@@ -380,7 +398,8 @@ function sendToWidget() {
       showGemini: getShowProvider('gemini'),
       showFable: getShowFable(),
       colorTheme: getColorTheme(),
-      sizeScale: WIDGET_SIZE_SCALE[getWidgetSize()]
+      sizeScale: WIDGET_SIZE_SCALE[getWidgetSize()],
+      graphStyle: getGraphStyle()
     });
   }
 }
@@ -573,6 +592,11 @@ function applyWidgetSize(widgetSize) {
   sendToWidget(); // resizeWidgetToState()가 새 크기로 창도 같이 리사이즈함
 }
 
+function applyGraphStyle(graphStyle) {
+  saveState({ graphStyle });
+  sendToWidget(); // 그래프 모양에 따라 섹션 높이가 달라지므로 리사이즈도 같이 됨
+}
+
 function applyShowProvider(key, value) {
   // 최소 하나는 항상 켜져 있어야 한다
   const others = ALL_PROVIDER_KEYS.filter((k) => k !== key);
@@ -616,6 +640,16 @@ function createTray() {
       checked: widgetSize === s.key,
       click: () => { applyWidgetSize(s.key); tray.setContextMenu(buildMenu()); }
     }));
+    const graphStyle = getGraphStyle();
+    const graphStyleMenu = [
+      { key: 'ring', label: '원형' },
+      { key: 'bar', label: '막대형' }
+    ].map((g) => ({
+      label: g.label,
+      type: 'radio',
+      checked: graphStyle === g.key,
+      click: () => { applyGraphStyle(g.key); tray.setContextMenu(buildMenu()); }
+    }));
 
     return Menu.buildFromTemplate([
       {
@@ -638,6 +672,7 @@ function createTray() {
       },
       { label: '위젯 투명도', submenu: opacityMenu },
       { label: '위젯 크기', submenu: sizeMenu },
+      { label: '그래프 모양', submenu: graphStyleMenu },
       { label: '색상 테마', submenu: themeMenu },
       {
         label: '위젯에 Fable 표시',
