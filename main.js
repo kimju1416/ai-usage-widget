@@ -102,19 +102,27 @@ function getGraphStyle() {
 
 // 해시/쿼리만 다르고 나머지 URL이 같으면 Electron/Chromium이 "같은 문서 내 이동"으로 처리해
 // 페이지를 다시 로드하지 않을 수 있다. 매번 진짜로 새로 로드되도록 쿼리스트링에 타임스탬프를 섞는다.
+//
+// 중요: 각 서비스 페이지는 사용자 계정/시스템 언어에 따라 한국어가 아닐 수 있다.
+// 한국어 문구만 매칭하면 영어 UI 사용자는 로그인해도 값을 영영 못 읽는다("로그인이 안 돼요" 제보의 원인)
+// — 모든 추출 정규식은 한국어와 영어를 둘 다 지원해야 한다.
 const CLAUDE_EXTRACT_SCRIPT = `(function(){
   const text = document.body.innerText || '';
-  const sessionM = text.match(/현재\\s*세션\\s*\\n([^\\n]+)\\s*\\n(\\d+)%\\s*사용됨/);
-  const weeklyM = text.match(/모든\\s*모델\\s*\\n([^\\n]+)\\s*\\n(\\d+)%\\s*사용됨/);
-  const fableM = text.match(/Fable\\s*\\n([^\\n]+)\\s*\\n(\\d+)%\\s*사용됨/);
+  function grab(label) {
+    const m = text.match(new RegExp(label + '\\\\s*\\\\n([^\\\\n]+)\\\\s*\\\\n(\\\\d+)%\\\\s*(?:사용됨|used)', 'i'));
+    return m ? { reset: m[1].trim(), pct: parseInt(m[2], 10) } : null;
+  }
+  const session = grab('(?:현재\\\\s*세션|Current\\\\s*session)');
+  const weekly = grab('(?:모든\\\\s*모델|All\\\\s*models)');
+  const fable = grab('Fable');
   const hasLoginForm = !!document.querySelector('input[type="password"], input[name="email"]') ||
     /계속하려면 로그인|Continue with|Log in to Claude|로 계속하기|로그인 또는 회원가입|빠르게 생각하고/i.test(text);
   return {
-    ok: !!(sessionM && weeklyM),
-    needsLogin: !sessionM && !weeklyM && hasLoginForm,
-    session: sessionM ? { reset: sessionM[1].trim(), pct: parseInt(sessionM[2], 10) } : null,
-    weekly: weeklyM ? { reset: weeklyM[1].trim(), pct: parseInt(weeklyM[2], 10) } : null,
-    fable: fableM ? { reset: fableM[1].trim(), pct: parseInt(fableM[2], 10) } : null
+    ok: !!(session && weekly),
+    needsLogin: !session && !weekly && hasLoginForm,
+    session: session,
+    weekly: weekly,
+    fable: fable
   };
 })()`;
 
@@ -123,19 +131,22 @@ const CLAUDE_LOGIN_CHECK_SCRIPT = `(!location.href.includes('/login') && (
   /안녕하세요/.test(document.body.innerText || '')
 ))`;
 
-// Codex는 "N% 남음"(remaining) 형태라 사용됨%로 변환한다.
+// Codex는 "N% 남음"(remaining) 형태라 사용됨%로 변환한다. 영어 UI는 "N% left/remaining".
 const CODEX_EXTRACT_SCRIPT = `(function(){
   const text = document.body.innerText || '';
-  const fiveM = text.match(/5시간\\s*사용\\s*한도\\s*\\n+(\\d+)%\\s*\\n*남음\\s*\\n*([^\\n]+)/);
-  const weekM = text.match(/주간\\s*사용\\s*한도\\s*\\n+(\\d+)%\\s*\\n*남음\\s*\\n*([^\\n]+)/);
+  function grab(label) {
+    const m = text.match(new RegExp(label + '\\\\s*\\\\n+(\\\\d+)%\\\\s*\\\\n*(?:남음|left|remaining)\\\\s*\\\\n*([^\\\\n]+)', 'i'));
+    return m ? { reset: m[2].trim(), pct: 100 - parseInt(m[1], 10) } : null;
+  }
+  const session = grab('(?:5시간\\\\s*사용\\\\s*한도|5[\\\\s-]*h(?:our)?\\\\s*(?:usage\\\\s*)?limit)');
+  const weekly = grab('(?:주간\\\\s*사용\\\\s*한도|Weekly\\\\s*(?:usage\\\\s*)?limit)');
   const hasLoginForm = !!document.querySelector('input[type="password"], input[name="email"]') ||
     /로그인 또는 회원가입|Log in or sign up|계정으로 계속하기|Continue with/i.test(text);
-  const toUsed = (m) => m ? { reset: m[2].trim(), pct: 100 - parseInt(m[1], 10) } : null;
   return {
-    ok: !!(fiveM && weekM),
-    needsLogin: !fiveM && !weekM && hasLoginForm,
-    session: toUsed(fiveM),
-    weekly: toUsed(weekM),
+    ok: !!(session && weekly),
+    needsLogin: !session && !weekly && hasLoginForm,
+    session: session,
+    weekly: weekly,
     fable: null
   };
 })()`;
@@ -149,24 +160,31 @@ const CODEX_LOGIN_CHECK_SCRIPT = `(!document.querySelector('input[type="password
 // 블록 단위로 잘라낸 뒤 그 안에서 순서에 상관없이 각각 찾는 방식으로 만들었다.
 const GEMINI_EXTRACT_SCRIPT = `(function(){
   const text = document.body.innerText || '';
-  function block(startLabel, endLabel) {
-    const s = text.indexOf(startLabel);
+  function findLabel(labels) {
+    for (const label of labels) {
+      const i = text.search(new RegExp(label, 'i'));
+      if (i !== -1) return i;
+    }
+    return -1;
+  }
+  function block(startLabels, endLabels) {
+    const s = findLabel(startLabels);
     if (s === -1) return '';
-    const from = s + startLabel.length;
-    let e = endLabel ? text.indexOf(endLabel, from) : -1;
-    if (e === -1) e = from + 400;
+    const from = s + 4;
+    let e = endLabels ? findLabel(endLabels) : -1;
+    if (e === -1 || e <= from) e = from + 400;
     return text.slice(from, e);
   }
   function parse(blockText) {
-    const pctM = blockText.match(/(\\d+)%\\s*사용됨/);
-    const resetM = blockText.match(/([^\\n]*초기화)/);
+    const pctM = blockText.match(/(\\d+)%\\s*(?:사용됨|used)/i);
+    const resetM = blockText.match(/([^\\n]*(?:초기화|[Rr]esets?[^\\n]*))/);
     if (!pctM) return null;
     return { pct: parseInt(pctM[1], 10), reset: resetM ? resetM[1].trim() : '' };
   }
-  const sessionBlock = block('현재 사용량', '주간 한도');
-  const weeklyBlock = block('주간 한도', null);
-  const session = parse(sessionBlock);
-  const weekly = parse(weeklyBlock);
+  const SESSION_LABELS = ['현재 사용량', 'Current usage'];
+  const WEEKLY_LABELS = ['주간 한도', 'Weekly limit'];
+  const session = parse(block(SESSION_LABELS, WEEKLY_LABELS));
+  const weekly = parse(block(WEEKLY_LABELS, null));
   const hasLoginForm = !session && !weekly &&
     /Sign in|로그인|Google 계정으로 로그인/i.test(text);
   return {
@@ -462,15 +480,19 @@ async function pollProvider(providerKey) {
 
         // 값을 찾긴 했어도(ok=true) 페이지가 아직 이전/캐시된 숫자를 보여주는 과도기일 수 있다.
         // (Codex에서 100%가 잠깐 낮게 표시됐다가 다음 폴링에 다시 돌아오는 현상 확인됨)
-        // 한 번 더 확인해서 값이 안정됐는지 검증하고, 두 번째 값을 최종값으로 채택한다.
+        // 같은 값이 연속 두 번 읽힐 때까지 재확인해서(최대 3회) 안정된 값을 최종으로 채택한다 —
+        // 두 번째 값을 무조건 믿으면 그 값 자체가 과도기 값일 수 있다.
         if (result.ok) {
-          await new Promise((r) => setTimeout(r, 1500));
-          const confirm = await win.webContents.executeJavaScript(provider.extractScript);
-          if (confirm.ok) {
-            if (confirm.session.pct !== result.session.pct || confirm.weekly.pct !== result.weekly.pct) {
-              debugLog(`[${providerKey}] 값 안정화 재확인: ${result.session.pct}/${result.weekly.pct} → ${confirm.session.pct}/${confirm.weekly.pct} (두번째 값 채택)`);
+          for (let attempt = 0; attempt < 3; attempt++) {
+            await new Promise((r) => setTimeout(r, 1500));
+            const confirm = await win.webContents.executeJavaScript(provider.extractScript);
+            if (!confirm.ok) break;
+            const stable = confirm.session.pct === result.session.pct && confirm.weekly.pct === result.weekly.pct;
+            if (!stable) {
+              debugLog(`[${providerKey}] 값 안정화 재확인 ${attempt + 1}회: ${result.session.pct}/${result.weekly.pct} → ${confirm.session.pct}/${confirm.weekly.pct}`);
             }
             result = confirm;
+            if (stable) break;
           }
         }
 
