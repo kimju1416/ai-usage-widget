@@ -446,7 +446,7 @@ function withTimeout(promise, ms, label) {
 function maskSensitive(text) {
   return String(text)
     .replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, '[email]')
-    .slice(0, 120);
+    .slice(0, 500);
 }
 
 async function pollProvider(providerKey) {
@@ -469,12 +469,17 @@ async function pollProvider(providerKey) {
       (async () => {
         await win.loadURL(provider.usageUrl());
         debugLog(`[${providerKey}] loadURL 완료`);
-        await new Promise((r) => setTimeout(r, 2500));
+        await new Promise((r) => setTimeout(r, 3500));
         let result = await win.webContents.executeJavaScript(provider.extractScript);
 
-        // 사용량 화면이 늦게 열리는 경우가 있어, 실패했지만 로그아웃도 아니면 한 번 더 대기 후 재시도
+        // 사용량 화면이 늦게 열리는 경우가 있어(느린 회선/기기, 설정창이 늦게 뜨는 경우 등),
+        // 실패했지만 로그아웃도 아니면 시간차를 두고 최대 두 번 더 재시도한다.
         if (!result.ok && !result.needsLogin) {
-          await new Promise((r) => setTimeout(r, 2500));
+          await new Promise((r) => setTimeout(r, 3500));
+          result = await win.webContents.executeJavaScript(provider.extractScript);
+        }
+        if (!result.ok && !result.needsLogin) {
+          await new Promise((r) => setTimeout(r, 3500));
           result = await win.webContents.executeJavaScript(provider.extractScript);
         }
 
@@ -507,7 +512,7 @@ async function pollProvider(providerKey) {
           debugLog(`[${providerKey}] poll ok=true 5h=${result.session.pct}% 7d=${result.weekly.pct}%${fableStr}`);
         } else {
           const url = win.webContents.getURL();
-          const snippet = await win.webContents.executeJavaScript('(document.body.innerText||"").slice(0,300)');
+          const snippet = await win.webContents.executeJavaScript('(document.body.innerText||"").slice(0,800)');
           debugLog(`[${providerKey}] poll ok=false needsLogin=${result.needsLogin} url=${url} snippet=${JSON.stringify(maskSensitive(snippet))}`);
         }
         lastData[providerKey] = result;
