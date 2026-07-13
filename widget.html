@@ -103,7 +103,7 @@
         <span>Claude</span>
       </div>
       <div class="rings">
-        <div class="ring-wrap">
+        <div class="ring-wrap" id="claude-sessionWrap">
           <svg width="64" height="64" viewBox="0 0 64 64">
             <circle cx="32" cy="32" r="27" stroke="#44403c" stroke-width="7" fill="none" />
             <circle id="claude-sessionArc" cx="32" cy="32" r="27" stroke="#3b82f6" stroke-width="7" fill="none"
@@ -123,7 +123,7 @@
           <div class="ring-label">Fable</div>
           <div class="ring-reset" id="claude-fableReset">-</div>
         </div>
-        <div class="ring-wrap">
+        <div class="ring-wrap" id="claude-weeklyWrap">
           <svg width="64" height="64" viewBox="0 0 64 64">
             <circle cx="32" cy="32" r="27" stroke="#44403c" stroke-width="7" fill="none" />
             <circle id="claude-weeklyArc" cx="32" cy="32" r="27" stroke="#3b82f6" stroke-width="7" fill="none"
@@ -135,7 +135,7 @@
         </div>
       </div>
       <div class="bars">
-        <div class="bar-row">
+        <div class="bar-row" id="claude-sessionBarWrap">
           <div class="bar-row-top"><span>5시간 세션</span><span class="bar-row-pct" id="claude-sessionBarPct">--%</span></div>
           <div class="bar-track"><div class="bar-fill" id="claude-sessionBarFill"></div></div>
           <div class="bar-reset" id="claude-sessionBarReset">-</div>
@@ -145,7 +145,7 @@
           <div class="bar-track"><div class="bar-fill" id="claude-fableBarFill"></div></div>
           <div class="bar-reset" id="claude-fableBarReset">-</div>
         </div>
-        <div class="bar-row">
+        <div class="bar-row" id="claude-weeklyBarWrap">
           <div class="bar-row-top"><span>주간 한도</span><span class="bar-row-pct" id="claude-weeklyBarPct">--%</span></div>
           <div class="bar-track"><div class="bar-fill" id="claude-weeklyBarFill"></div></div>
           <div class="bar-reset" id="claude-weeklyBarReset">-</div>
@@ -177,7 +177,7 @@
         <span>Codex</span>
       </div>
       <div class="rings">
-        <div class="ring-wrap">
+        <div class="ring-wrap" id="codex-sessionWrap">
           <svg width="64" height="64" viewBox="0 0 64 64">
             <circle cx="32" cy="32" r="27" stroke="#44403c" stroke-width="7" fill="none" />
             <circle id="codex-sessionArc" cx="32" cy="32" r="27" stroke="#3b82f6" stroke-width="7" fill="none"
@@ -187,7 +187,7 @@
           <div class="ring-label">5시간 한도</div>
           <div class="ring-reset" id="codex-sessionReset">-</div>
         </div>
-        <div class="ring-wrap">
+        <div class="ring-wrap" id="codex-weeklyWrap">
           <svg width="64" height="64" viewBox="0 0 64 64">
             <circle cx="32" cy="32" r="27" stroke="#44403c" stroke-width="7" fill="none" />
             <circle id="codex-weeklyArc" cx="32" cy="32" r="27" stroke="#3b82f6" stroke-width="7" fill="none"
@@ -199,12 +199,12 @@
         </div>
       </div>
       <div class="bars">
-        <div class="bar-row">
+        <div class="bar-row" id="codex-sessionBarWrap">
           <div class="bar-row-top"><span>5시간 한도</span><span class="bar-row-pct" id="codex-sessionBarPct">--%</span></div>
           <div class="bar-track"><div class="bar-fill" id="codex-sessionBarFill"></div></div>
           <div class="bar-reset" id="codex-sessionBarReset">-</div>
         </div>
-        <div class="bar-row">
+        <div class="bar-row" id="codex-weeklyBarWrap">
           <div class="bar-row-top"><span>주간 한도</span><span class="bar-row-pct" id="codex-weeklyBarPct">--%</span></div>
           <div class="bar-track"><div class="bar-fill" id="codex-weeklyBarFill"></div></div>
           <div class="bar-reset" id="codex-weeklyBarReset">-</div>
@@ -229,7 +229,7 @@
         <span>Gemini</span>
       </div>
       <div class="rings">
-        <div class="ring-wrap">
+        <div class="ring-wrap" id="gemini-sessionWrap">
           <svg width="64" height="64" viewBox="0 0 64 64">
             <circle cx="32" cy="32" r="27" stroke="#44403c" stroke-width="7" fill="none" />
             <circle id="gemini-sessionArc" cx="32" cy="32" r="27" stroke="#3b82f6" stroke-width="7" fill="none"
@@ -239,7 +239,7 @@
           <div class="ring-label">5시간 한도</div>
           <div class="ring-reset" id="gemini-sessionReset">-</div>
         </div>
-        <div class="ring-wrap">
+        <div class="ring-wrap" id="gemini-weeklyWrap">
           <svg width="64" height="64" viewBox="0 0 64 64">
             <circle cx="32" cy="32" r="27" stroke="#44403c" stroke-width="7" fill="none" />
             <circle id="gemini-weeklyArc" cx="32" cy="32" r="27" stroke="#3b82f6" stroke-width="7" fill="none"
@@ -251,12 +251,12 @@
         </div>
       </div>
       <div class="bars">
-        <div class="bar-row">
+        <div class="bar-row" id="gemini-sessionBarWrap">
           <div class="bar-row-top"><span>5시간 한도</span><span class="bar-row-pct" id="gemini-sessionBarPct">--%</span></div>
           <div class="bar-track"><div class="bar-fill" id="gemini-sessionBarFill"></div></div>
           <div class="bar-reset" id="gemini-sessionBarReset">-</div>
         </div>
-        <div class="bar-row">
+        <div class="bar-row" id="gemini-weeklyBarWrap">
           <div class="bar-row-top"><span>주간 한도</span><span class="bar-row-pct" id="gemini-weeklyBarPct">--%</span></div>
           <div class="bar-track"><div class="bar-fill" id="gemini-weeklyBarFill"></div></div>
           <div class="bar-reset" id="gemini-weeklyBarReset">-</div>
@@ -321,13 +321,22 @@
     }
     loginBtn.style.display = 'none';
 
-    if (data.session && data.session.pct !== null) {
+    // 플랜에 따라 5시간/주간 중 하나가 아예 없는 계정도 있다(예: Codex 월간 전용 플랜,
+    // 또는 서비스가 일시적으로 한쪽 지표를 화면에서 뺀 경우) — 값이 없으면 자리를 숨겨서
+    // "--%"로 멈춘 것처럼 보이는 빈 그래프가 남지 않게 한다.
+    const hasSession = data.session && data.session.pct !== null;
+    document.getElementById(prefix + '-sessionWrap').style.display = hasSession ? 'flex' : 'none';
+    document.getElementById(prefix + '-sessionBarWrap').style.display = hasSession ? 'block' : 'none';
+    if (hasSession) {
       setRing(document.getElementById(prefix + '-sessionArc'), document.getElementById(prefix + '-sessionPct'), data.session.pct, theme.session);
       document.getElementById(prefix + '-sessionReset').textContent = data.session.reset;
       setBar(document.getElementById(prefix + '-sessionBarFill'), document.getElementById(prefix + '-sessionBarPct'), data.session.pct, theme.session);
       document.getElementById(prefix + '-sessionBarReset').textContent = data.session.reset;
     }
-    if (data.weekly && data.weekly.pct !== null) {
+    const hasWeekly = data.weekly && data.weekly.pct !== null;
+    document.getElementById(prefix + '-weeklyWrap').style.display = hasWeekly ? 'flex' : 'none';
+    document.getElementById(prefix + '-weeklyBarWrap').style.display = hasWeekly ? 'block' : 'none';
+    if (hasWeekly) {
       setRing(document.getElementById(prefix + '-weeklyArc'), document.getElementById(prefix + '-weeklyPct'), data.weekly.pct, theme.weekly);
       document.getElementById(prefix + '-weeklyReset').textContent = data.weekly.reset;
       setBar(document.getElementById(prefix + '-weeklyBarFill'), document.getElementById(prefix + '-weeklyBarPct'), data.weekly.pct, theme.weekly);

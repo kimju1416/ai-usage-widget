@@ -241,7 +241,15 @@ function widgetWidthFor(showFable, graphStyle) {
 }
 
 function metricCountFor(key) {
-  return key === 'claude' && getShowFable() ? 3 : 2;
+  const base = key === 'claude' && getShowFable() ? 3 : 2;
+  // 일부 플랜은 5시간/주간 중 하나가 아예 없다(예: Codex 월간 전용) — 실제로 안 보이는
+  // 지표만큼 막대형 높이도 줄여서 빈 자리가 남지 않게 한다.
+  const data = lastData[key];
+  if (!data || !data.ok) return base;
+  let missing = 0;
+  if (!(data.session && data.session.pct !== null)) missing++;
+  if (!(data.weekly && data.weekly.pct !== null)) missing++;
+  return Math.max(1, base - missing);
 }
 
 // 로그인 필요 버튼이 보일 때만 여유 공간이 더 필요하고, 로그인된 상태(그래프+상태줄만)는
