@@ -132,6 +132,8 @@ const CLAUDE_LOGIN_CHECK_SCRIPT = `(!location.href.includes('/login') && (
 ))`;
 
 // Codex는 "N% 남음"(remaining) 형태라 사용됨%로 변환한다. 영어 UI는 "N% left/remaining".
+// 플랜에 따라 "5시간+주간" 대신 "월간 사용 한도" 하나만 있는 계정도 있다(공유 에이전트 한도 등) —
+// 이 경우 session은 없는 게 정상이고, weekly 자리에 월간 값을 대신 채워서 최소한 값은 보여준다.
 const CODEX_EXTRACT_SCRIPT = `(function(){
   const text = document.body.innerText || '';
   function grab(label) {
@@ -139,11 +141,12 @@ const CODEX_EXTRACT_SCRIPT = `(function(){
     return m ? { reset: m[2].trim(), pct: 100 - parseInt(m[1], 10) } : null;
   }
   const session = grab('(?:5시간\\\\s*사용\\\\s*한도|5[\\\\s-]*h(?:our)?\\\\s*(?:usage\\\\s*)?limit)');
-  const weekly = grab('(?:주간\\\\s*사용\\\\s*한도|Weekly\\\\s*(?:usage\\\\s*)?limit)');
+  const weekly = grab('(?:주간\\\\s*사용\\\\s*한도|Weekly\\\\s*(?:usage\\\\s*)?limit)') ||
+    grab('(?:월간\\\\s*사용\\\\s*한도|Monthly\\\\s*(?:usage\\\\s*)?limit)');
   const hasLoginForm = !!document.querySelector('input[type="password"], input[name="email"]') ||
     /로그인 또는 회원가입|Log in or sign up|계정으로 계속하기|Continue with/i.test(text);
   return {
-    ok: !!(session && weekly),
+    ok: !!(session || weekly),
     needsLogin: !session && !weekly && hasLoginForm,
     session: session,
     weekly: weekly,
@@ -399,9 +402,11 @@ function updateTray() {
     } else if (!data.ok) {
       lines.push(`${label}: 읽기 실패`);
     } else {
-      let line = `${label} 5h ${data.session.pct}% · 7d ${data.weekly.pct}%`;
-      if (data.fable) line += ` · Fable ${data.fable.pct}%`;
-      lines.push(line);
+      const parts = [];
+      if (data.session) parts.push(`5h ${data.session.pct}%`);
+      if (data.weekly) parts.push(`7d ${data.weekly.pct}%`);
+      if (data.fable) parts.push(`Fable ${data.fable.pct}%`);
+      lines.push(`${label} ${parts.join(' · ')}`);
     }
   }
   tray.setToolTip(lines.length ? lines.join('\n') : 'Claude 사용량 위젯');
@@ -492,9 +497,12 @@ async function pollProvider(providerKey) {
             await new Promise((r) => setTimeout(r, 1500));
             const confirm = await win.webContents.executeJavaScript(provider.extractScript);
             if (!confirm.ok) break;
-            const stable = confirm.session.pct === result.session.pct && confirm.weekly.pct === result.weekly.pct;
+            // session/weekly 중 하나가 없는 플랜(월간 한도만 있는 Codex 계정 등)도 있어 null-safe 비교
+            const stable = (confirm.session ? confirm.session.pct : null) === (result.session ? result.session.pct : null) &&
+              (confirm.weekly ? confirm.weekly.pct : null) === (result.weekly ? result.weekly.pct : null);
             if (!stable) {
-              debugLog(`[${providerKey}] 값 안정화 재확인 ${attempt + 1}회: ${result.session.pct}/${result.weekly.pct} → ${confirm.session.pct}/${confirm.weekly.pct}`);
+              const fmt = (d) => d ? `${d.session ? d.session.pct : '-'}/${d.weekly ? d.weekly.pct : '-'}` : '-';
+              debugLog(`[${providerKey}] 값 안정화 재확인 ${attempt + 1}회: ${fmt(result)} → ${fmt(confirm)}`);
             }
             result = confirm;
             if (stable) break;
@@ -509,7 +517,9 @@ async function pollProvider(providerKey) {
 
         if (result.ok) {
           const fableStr = result.fable ? ` fable=${result.fable.pct}%` : '';
-          debugLog(`[${providerKey}] poll ok=true 5h=${result.session.pct}% 7d=${result.weekly.pct}%${fableStr}`);
+          const sessionStr = result.session ? `5h=${result.session.pct}%` : '5h=(없음)';
+          const weeklyStr = result.weekly ? `7d=${result.weekly.pct}%` : '7d=(없음)';
+          debugLog(`[${providerKey}] poll ok=true ${sessionStr} ${weeklyStr}${fableStr}`);
         } else {
           const url = win.webContents.getURL();
           const snippet = await win.webContents.executeJavaScript('(document.body.innerText||"").slice(0,800)');
