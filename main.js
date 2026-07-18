@@ -528,20 +528,30 @@ async function pollProvider(providerKey) {
           const sessionStr = result.session ? `5h=${result.session.pct}%` : '5h=(없음)';
           const weeklyStr = result.weekly ? `7d=${result.weekly.pct}%` : '7d=(없음)';
           debugLog(`[${providerKey}] poll ok=true ${sessionStr} ${weeklyStr}${fableStr}`);
+          lastData[providerKey] = result;
+        } else if (result.needsLogin) {
+          // 로그인 필요 상태는 화면에 그대로 반영해야 하는 진짜 상태 전환이다
+          debugLog(`[${providerKey}] poll needsLogin=true`);
+          lastData[providerKey] = result;
         } else {
+          // 일시적 실패(서비스 쪽 오류, 페이지가 덜 로드된 경우 등)는 lastData를 건드리지 않는다.
+          // 예전엔 이런 실패 시에도 결과를 그대로 덮어써서, 예를 들어 Claude에서 세션/주간 값을
+          // 못 읽었는데 Fable만 우연히 읽혀서 "5시간·주간은 사라지고 Fable만 남는" 것처럼 보이는
+          // 오해를 일으켰다 — 실패했을 땐 마지막으로 성공한 값을 그대로 유지한다.
           const url = win.webContents.getURL();
           const snippet = await win.webContents.executeJavaScript('(document.body.innerText||"").slice(0,800)');
-          debugLog(`[${providerKey}] poll ok=false needsLogin=${result.needsLogin} url=${url} snippet=${JSON.stringify(maskSensitive(snippet))}`);
+          debugLog(`[${providerKey}] poll ok=false needsLogin=false(값 유지) url=${url} snippet=${JSON.stringify(maskSensitive(snippet))}`);
         }
-        lastData[providerKey] = result;
       })(),
       POLL_TIMEOUT_MS,
       `${providerKey} poll`
     );
   } catch (e) {
     if (myGeneration === pollGeneration[providerKey]) {
+      // 타임아웃/네트워크 오류 등 일시적 실패도 lastData를 지우지 않는다 — 마지막으로 성공한
+      // 값을 그대로 유지해야 위젯이 갑자기 텅 비어 보이는 일이 없다(처음 폴링부터 실패하면
+      // lastData가 애초에 null이라 "불러오는 중"으로 정상 표시됨).
       debugLog(`[${providerKey}] poll error: ${e.message}`);
-      lastData[providerKey] = { ok: false, needsLogin: false, session: null, weekly: null, fable: null };
     }
     // 타임아웃 시 워커 창에 남은 요청을 실제로 끊어서, 좀비 프로미스가 다음 폴링 창을 계속 붙잡지 않게 한다
     if (win && !win.isDestroyed()) {
