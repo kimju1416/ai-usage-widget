@@ -1,8 +1,12 @@
-const { app, BrowserWindow, Tray, Menu, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain, shell, Notification } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const https = require('https');
 
 const POLL_INTERVAL_MS = 60 * 1000; // 1분마다 자동 새로고침
+const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6시간마다 새 버전 확인
+const RELEASES_PAGE_URL = 'https://github.com/kimju1416/ai-usage-widget/releases/latest';
+const RELEASES_API_URL = 'https://api.github.com/repos/kimju1416/ai-usage-widget/releases/latest';
 
 const userDataPath = app.getPath('userData');
 const stateFile = path.join(userDataPath, 'widget-state.json');
@@ -37,6 +41,53 @@ let pollTimer = null;
 const workerWins = { claude: null, codex: null, gemini: null };
 const lastData = { claude: null, codex: null, gemini: null };
 let loginCheckInFlight = { claude: false, codex: false, gemini: false };
+let latestVersion = null; // GitHub에서 확인한 최신 버전(v 접두사 제거) — 지금 버전보다 높으면 알림
+let rebuildTrayMenu = null; // createTray()가 채워줌 — 업데이트 발견 시 트레이 메뉴를 즉시 새로고침하기 위함
+
+// "1.0.18" 같은 x.y.z 버전 문자열을 숫자 배열로 비교한다. 세그먼트 개수가 달라도 안전하게 비교.
+function isNewerVersion(remote, current) {
+  const r = remote.split('.').map((n) => parseInt(n, 10) || 0);
+  const c = current.split('.').map((n) => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(r.length, c.length); i++) {
+    const rv = r[i] || 0, cv = c[i] || 0;
+    if (rv > cv) return true;
+    if (rv < cv) return false;
+  }
+  return false;
+}
+
+function checkForUpdates() {
+  https.get(RELEASES_API_URL, { headers: { 'User-Agent': 'AIUsageWidget' } }, (res) => {
+    let body = '';
+    res.on('data', (chunk) => { body += chunk; });
+    res.on('end', () => {
+      try {
+        const json = JSON.parse(body);
+        const remote = String(json.tag_name || '').replace(/^v/, '');
+        const current = app.getVersion();
+        if (remote && isNewerVersion(remote, current)) {
+          debugLog(`새 버전 발견: v${remote} (현재 v${current})`);
+          if (latestVersion !== remote) {
+            latestVersion = remote;
+            if (Notification.isSupported()) {
+              const n = new Notification({
+                title: 'AI 사용량 위젯 업데이트',
+                body: `새 버전 v${remote}이(가) 나왔어요. 클릭하면 다운로드 페이지로 이동합니다.`
+              });
+              n.on('click', () => shell.openExternal(RELEASES_PAGE_URL));
+              n.show();
+            }
+            if (rebuildTrayMenu) rebuildTrayMenu();
+          }
+        }
+      } catch (e) {
+        debugLog(`업데이트 확인 파싱 오류: ${e.message}`);
+      }
+    });
+  }).on('error', (e) => {
+    debugLog(`업데이트 확인 네트워크 오류: ${e.message}`);
+  });
+}
 
 // 예상치 못한 오류로 트레이 상주 앱 전체가 조용히 죽어버리는 걸 방지 — 로그만 남기고 계속 실행
 process.on('uncaughtException', (err) => {
@@ -710,7 +761,13 @@ function createTray() {
       click: () => { applyGraphStyle(g.key); tray.setContextMenu(buildMenu()); }
     }));
 
+    const updateItems = (latestVersion && isNewerVersion(latestVersion, app.getVersion())) ? [
+      { label: `🆕 새 버전 v${latestVersion} 다운로드`, click: () => shell.openExternal(RELEASES_PAGE_URL) },
+      { type: 'separator' }
+    ] : [];
+
     return Menu.buildFromTemplate([
+      ...updateItems,
       {
         label: '위젯 카드로 보기',
         type: 'radio',
@@ -779,6 +836,7 @@ function createTray() {
   };
 
   tray.setContextMenu(buildMenu());
+  rebuildTrayMenu = () => tray.setContextMenu(buildMenu());
   tray.on('click', () => {
     if (getMode() !== 'widget') return; // 트레이 전용 모드에서는 좌클릭으로 창을 띄우지 않음
     if (!widgetWin) { createWidgetWindow(); return; }
@@ -809,6 +867,9 @@ if (!gotLock) {
 
     pollAll();
     pollTimer = setInterval(pollAll, POLL_INTERVAL_MS);
+
+    checkForUpdates();
+    setInterval(checkForUpdates, UPDATE_CHECK_INTERVAL_MS);
   });
 }
 
