@@ -374,7 +374,12 @@ function createWidgetWindow() {
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      // 메인 프로세스 이벤트 루프가 멈췄을 때(원인 불명, v1.0.20 참고) "새로고침"은 IPC로
+      // 메인에 신호를 보내는 방식이라 같이 먹통이 된다. preload에서 메인을 거치지 않고
+      // 직접 taskkill+재실행하는 강제 재시작 버튼을 쓰려면 preload에 Node 접근이 필요해서
+      // sandbox를 끈다. 이 창은 항상 우리가 만든 widget.html만 로드하므로(외부 페이지 없음) 안전하다.
+      sandbox: false
     }
   });
 

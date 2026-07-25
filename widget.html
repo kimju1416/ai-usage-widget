@@ -358,16 +358,36 @@
   // 예전엔 마지막 성공값이 화면에 그대로 남아있어서 멈춘 걸 못 알아채는 문제가 있었다.
   let lastUsageDataAt = Date.now();
   const STALE_THRESHOLD_MS = 3 * 60 * 1000; // 정상 주기(1분)의 3배 이상 안 오면 멈춘 것으로 간주
+  const statusEl = document.getElementById('status');
+  let staleUiActive = false;
   setInterval(() => {
     const idleMs = Date.now() - lastUsageDataAt;
     if (idleMs > STALE_THRESHOLD_MS) {
       const idleMin = Math.floor(idleMs / 60000);
-      document.getElementById('status').textContent = `⚠️ ${idleMin}분째 응답 없음 — 재시작 필요`;
+      // 이 상태에선 새로고침 버튼도 같이 먹통이다(둘 다 멈춘 메인 프로세스에 IPC를 보내는
+      // 방식이라서) — 그래서 메인을 거치지 않는 강제 재시작을 상태줄 클릭으로 제공한다.
+      statusEl.textContent = `⚠️ ${idleMin}분째 응답 없음 — 클릭해서 재시작`;
+      if (!staleUiActive) {
+        staleUiActive = true;
+        statusEl.style.cursor = 'pointer';
+        statusEl.style.color = '#f87171';
+      }
     }
   }, 20000);
 
+  statusEl.addEventListener('click', () => {
+    if (!staleUiActive) return;
+    statusEl.textContent = '재시작 중...';
+    window.widgetAPI.forceRestart();
+  });
+
   window.widgetAPI.onUsageData((data) => {
     lastUsageDataAt = Date.now();
+    if (staleUiActive) {
+      staleUiActive = false;
+      statusEl.style.cursor = '';
+      statusEl.style.color = '';
+    }
     const theme = THEMES[data.colorTheme] || THEMES.vivid;
 
     // 창 크기(main.js에서 이미 scale만큼 키움)에 맞춰 내용도 같은 비율로 확대/축소 —
