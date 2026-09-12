@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<title></title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: transparent; }
+  body {
+    --text: #f2f2f2;
+    --label: #a6a6a6;
+    --sep: #7c7c7c;
+    --low: #6fd2ae;
+    --mid: #f0c36a;
+    --high: #f49b9b;
+    font-family: "Segoe UI Variable Text", "Segoe UI", "Malgun Gothic", sans-serif;
+    font-size: 12px;
+    color: var(--text);
+    user-select: none;
+    cursor: default;
+  }
+  /* 밝은 작업표시줄: 흰 바탕에서 읽히도록 진한 색 */
+  body.light {
+    --text: #1b1b1b;
+    --label: #5d5d5d;
+    --sep: #8c8c8c;
+    --low: #0a6a4e;
+    --mid: #8a5200;
+    --high: #b3261e;
+  }
+  #strip {
+    position: absolute;
+    top: 50%;
+    right: 0;
+    transform: translateY(-50%);
+    display: grid;
+    grid-template-columns: auto auto;
+    column-gap: 7px;
+    row-gap: 1px;
+    width: max-content;
+    padding: 0 4px;
+    line-height: 15px;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .lbl { color: var(--label); }
+  .name { margin-right: 3px; }
+  .sep { color: var(--sep); margin: 0 5px; }
+  .v { display: inline-block; min-width: 2ch; text-align: right; font-weight: 600; }
+  .v.none { min-width: 0; color: var(--label); font-weight: 400; }
+  .v.low { color: var(--low); }
+  .v.mid { color: var(--mid); }
+  .v.high { color: var(--high); }
+  body.stale #strip { opacity: 0.45; }
+</style>
+</head>
+<body>
+<div id="strip"></div>
+<script>
+  const strip = document.getElementById('strip');
+  let lastWidth = 0;
+  let lastBeat = Date.now();
+
+  function span(cls, text) {
+    const s = document.createElement('span');
+    s.className = cls;
+    s.textContent = text;
+    return s;
+  }
+
+  function alive() {
+    lastBeat = Date.now();
+    document.body.classList.remove('stale');
+  }
+
+  // 창은 글자 폭만큼만 열리므로 폭이 바뀔 때마다 메인에 알린다(창 크기와 무관하게 max-content로 잰다)
+  function reportWidth() {
+    const w = Math.ceil(strip.getBoundingClientRect().width);
+    if (w > 0 && w !== lastWidth) {
+      lastWidth = w;
+      window.stripAPI.reportWidth(w);
+    }
+  }
+
+  function render(model) {
+    document.body.classList.toggle('light', model.light === true);
+    const frag = document.createDocumentFragment();
+    for (const row of (model.rows || [])) {
+      frag.appendChild(span('lbl', row.label));
+      const line = span('line', '');
+      (row.cells || []).forEach((cell, i) => {
+        if (i > 0) line.appendChild(span('sep', '·'));
+        line.appendChild(span('name', cell.name));
+        line.appendChild(span('v ' + cell.level, cell.text));
+      });
+      frag.appendChild(line);
+    }
+    strip.replaceChildren(frag);
+    document.body.title = model.tooltip || '';
+    alive();
+    reportWidth();
+  }
+
+  window.stripAPI.onModel(render);
+  window.stripAPI.onHeartbeat(alive);
+  // 메인 프로세스가 멈추면(v1.0.20 사고) 마지막 숫자가 그럴듯하게 남는다 — 90초 넘게 신호가 없으면 흐리게 표시
+  setInterval(() => {
+    if (Date.now() - lastBeat > 90000) document.body.classList.add('stale');
+  }, 15000);
+  document.addEventListener('mouseup', (e) => { if (e.button === 0) window.stripAPI.click(); });
+  document.addEventListener('contextmenu', (e) => { e.preventDefault(); window.stripAPI.contextMenu(); });
+</script>
+</body>
+</html>

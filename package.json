@@ -1,7 +1,7 @@
 {
   "name": "ai-usage-widget",
   "productName": "AIUsageWidget",
-  "version": "1.0.21",
+  "version": "1.0.22",
   "description": "Claude·Codex·Gemini 5시간/주간 사용량을 항상 위에 떠서 보여주는 위젯",
   "main": "main.js",
   "author": "kimju.zip",
@@ -29,13 +29,36 @@
       "preload.js",
       "widget.html",
       "about.html",
-      "assets/**"
+      "strip.js",
+      "strip-layout.js",
+      "strip-win32.js",
+      "strip-preload.js",
+      "strip.html",
+      "assets/**",
+      "!node_modules/koffi/src/**",
+      "!node_modules/koffi/vendor/**",
+      "!node_modules/koffi/doc/**",
+      "!node_modules/koffi/lib/**",
+      "!node_modules/koffi/*.md",
+      "!node_modules/koffi/index.d.ts",
+      "!node_modules/koffi/build/koffi/!(win32_x64)/**",
+      "!node_modules/koffi/build/koffi/win32_x64/*.{exp,lib}"
     ],
+    "asarUnpack": [
+      "node_modules/koffi/build/koffi/win32_x64/koffi.node"
+    ],
+    "electronLanguages": [
+      "ko",
+      "en-US"
+    ],
+    "compression": "maximum",
     "win": {
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "assets/icon.ico",
@@ -48,5 +71,8 @@
       "deleteAppDataOnUninstall": false,
       "shortcutName": "AI 사용량 위젯"
     }
+  },
+  "dependencies": {
+    "koffi": "^2.15.1"
   }
 }

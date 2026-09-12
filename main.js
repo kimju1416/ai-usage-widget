@@ -2,6 +2,8 @@ const { app, BrowserWindow, Tray, Menu, ipcMain, shell, Notification } = require
 const path = require('path');
 const fs = require('fs');
 const https = require('https');
+const { createStrip } = require('./strip');
+const stripLayout = require('./strip-layout');
 
 const POLL_INTERVAL_MS = 60 * 1000; // 1분마다 자동 새로고침
 const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6시간마다 새 버전 확인
@@ -42,7 +44,9 @@ const workerWins = { claude: null, codex: null, gemini: null };
 const lastData = { claude: null, codex: null, gemini: null };
 let loginCheckInFlight = { claude: false, codex: false, gemini: false };
 let latestVersion = null; // GitHub에서 확인한 최신 버전(v 접두사 제거) — 지금 버전보다 높으면 알림
-let rebuildTrayMenu = null; // createTray()가 채워줌 — 업데이트 발견 시 트레이 메뉴를 즉시 새로고침하기 위함
+let strip = null; // 작업표시줄 글자 띠(strip.js) — 켜 둔 동안에만 창이 생긴다
+let stripPresent = null; // 글자 띠가 트레이 아이콘 역할을 대신하는 중인지 — 모르면 null(켠 직후)
+let quitting = false;
 
 // "1.0.18" 같은 x.y.z 버전 문자열을 숫자 배열로 비교한다. 세그먼트 개수가 달라도 안전하게 비교.
 function isNewerVersion(remote, current) {
@@ -77,7 +81,7 @@ function checkForUpdates() {
               n.on('click', () => shell.openExternal(RELEASES_PAGE_URL));
               n.show();
             }
-            if (rebuildTrayMenu) rebuildTrayMenu();
+            refreshTrayMenu();
           }
         }
       } catch (e) {
@@ -149,6 +153,10 @@ function getShowProvider(key) {
 
 function getGraphStyle() {
   return loadState().graphStyle === 'bar' ? 'bar' : 'ring';
+}
+
+function getTaskbarStrip() {
+  return loadState().taskbarStrip === true; // 기본값: 꺼짐 — 업데이트해도 기존 화면이 갑자기 바뀌지 않게
 }
 
 // 해시/쿼리만 다르고 나머지 URL이 같으면 Electron/Chromium이 "같은 문서 내 이동"으로 처리해
@@ -450,8 +458,8 @@ function getWorkerWindow(providerKey) {
 }
 
 
-function updateTray() {
-  if (!tray) return;
+// 트레이 툴팁과 작업표시줄 글자 띠 툴팁이 같이 쓰는 서비스별 한 줄 요약
+function statusLines() {
   // Windows 트레이 툴팁은 글자수 제한이 있어(약 128자), reset 시각 등은 빼고 짧게 압축한다 —
   // 아니면 뒤쪽 provider(Codex) 줄이 통째로 잘려서 안 보이는 문제가 있었다.
   const lines = [];
@@ -473,11 +481,24 @@ function updateTray() {
       lines.push(`${label} ${parts.join(' · ')}`);
     }
   }
+  return lines;
+}
+
+function updateTray() {
+  if (!tray) return;
+  const lines = statusLines();
   tray.setToolTip(lines.length ? lines.join('\n') : 'Claude 사용량 위젯');
+}
+
+// 작업표시줄 글자 띠에 보낼 내용 — 켜 둔 서비스만, 5시간/주간 두 줄
+function stripModel() {
+  const providers = ALL_PROVIDER_KEYS.filter(getShowProvider).map((key) => ({ key, label: PROVIDERS[key].label }));
+  return { ...stripLayout.buildStripModel(lastData, providers), tooltip: statusLines().join('\n') };
 }
 
 function sendToWidget() {
   updateTray();
+  if (strip) strip.update();
   resizeWidgetToState();
   if (widgetWin && !widgetWin.isDestroyed()) {
     widgetWin.webContents.send('usage-data', {
@@ -721,132 +742,201 @@ function applyShowProvider(key, value) {
   sendToWidget();
 }
 
+function applyTaskbarStrip(on) {
+  saveState({ taskbarStrip: on });
+  if (!strip) return;
+  if (on) {
+    // 트레이 아이콘은 글자 띠가 실제로 뜬 뒤(onPresenceChange) 뺀다 — 못 뜨면 그대로 남는다
+    stripPresent = null;
+    strip.start();
+  } else {
+    strip.stop();
+    stripPresent = null;
+    syncTrayIcon();
+  }
+}
+
+// 글자 띠를 켰고 실제로 떠 있으면(전체화면·자동 숨김으로 잠깐 숨은 때 포함) 트레이 아이콘을 뺀다.
+// 글자 띠를 못 띄우면 아이콘을 되살린다 — 둘 다 없으면 메뉴를 열 곳도, 앱을 끌 곳도 사라진다.
+function syncTrayIcon() {
+  if (quitting) return;
+  const wantTray = !strip || !getTaskbarStrip() || stripPresent !== true;
+  if (wantTray && !tray) {
+    createTray();
+    debugLog('트레이 아이콘 표시');
+  } else if (!wantTray && tray) {
+    const t = tray;
+    tray = null;
+    if (!t.isDestroyed()) t.destroy();
+    debugLog('트레이 아이콘 뺌(작업표시줄 글자 띠가 대신함)');
+  }
+}
+
+// 글자 띠 오른쪽 클릭 — 트레이 아이콘이 빠져 있으므로 글자 띠 창에 붙여 같은 메뉴를 연다
+function popUpMenuFromStrip() {
+  const menu = buildTrayMenu();
+  const w = strip && strip.window();
+  if (w && !w.isDestroyed()) {
+    // 글자 띠 창은 포커스를 안 받게 만들어 뒀는데, 그대로 메뉴를 붙이면 우리 앱이 활성 상태가 아니라서
+    // 바깥을 눌러도 안 닫히거나 다음 오른쪽 클릭에 안 열리는 일이 섞여 났다(3번 중 2번, 실측).
+    // 메뉴가 떠 있는 동안만 포커스를 받게 한다 — 방금 이 창이 오른쪽 클릭을 받았으니 윈도우가 전면 전환을 허용한다.
+    w.setFocusable(true);
+    w.focus();
+    strip.setRaisePaused(true); // 메뉴 아랫부분이 작업표시줄 높이까지 내려와 글자 띠와 겹친다 — 떠 있는 동안 글자 띠를 위로 올리지 않는다
+    menu.popup({
+      window: w,
+      callback: () => {
+        strip.setRaisePaused(false);
+        if (!w.isDestroyed()) w.setFocusable(false);
+      }
+    });
+  } else if (tray && !tray.isDestroyed()) {
+    tray.popUpContextMenu(menu);
+  }
+}
+
+// 트레이 아이콘·작업표시줄 글자 띠 왼쪽 클릭 — 위젯 카드 모드일 때만 카드를 켰다 껐다 한다
+function toggleWidgetFromTray() {
+  if (getMode() !== 'widget') return; // 트레이 전용 모드에서는 좌클릭으로 창을 띄우지 않음
+  if (!widgetWin) { createWidgetWindow(); return; }
+  widgetWin.isVisible() ? widgetWin.hide() : widgetWin.show();
+}
+
+// 트레이 아이콘 메뉴와 글자 띠 오른쪽 클릭 메뉴가 같이 쓴다 — 트레이 아이콘이 빠져 있어도 만들 수 있게 밖으로 뺐다
+function buildTrayMenu() {
+  const stripAvailable = !!(strip && strip.available());
+  const mode = getMode();
+  const opacity = getOpacity();
+  const colorTheme = getColorTheme();
+  const opacityMenu = [1, 0.85, 0.7, 0.55].map((v) => ({
+    label: `${Math.round(v * 100)}%`,
+    type: 'radio',
+    checked: Math.abs(opacity - v) < 0.001,
+    click: () => { applyOpacity(v); refreshTrayMenu(); }
+  }));
+  const themeMenu = [
+    { key: 'vivid', label: '컬러풀 (청록/핑크/노랑)' },
+    { key: 'muted', label: '차분한 톤 (무채색)' }
+  ].map((t) => ({
+    label: t.label,
+    type: 'radio',
+    checked: colorTheme === t.key,
+    click: () => { applyColorTheme(t.key); refreshTrayMenu(); }
+  }));
+  const widgetSize = getWidgetSize();
+  const sizeMenu = [
+    { key: 'small', label: '소' },
+    { key: 'medium', label: '중' },
+    { key: 'large', label: '대' }
+  ].map((s) => ({
+    label: s.label,
+    type: 'radio',
+    checked: widgetSize === s.key,
+    click: () => { applyWidgetSize(s.key); refreshTrayMenu(); }
+  }));
+  const graphStyle = getGraphStyle();
+  const graphStyleMenu = [
+    { key: 'ring', label: '원형' },
+    { key: 'bar', label: '막대형' }
+  ].map((g) => ({
+    label: g.label,
+    type: 'radio',
+    checked: graphStyle === g.key,
+    click: () => { applyGraphStyle(g.key); refreshTrayMenu(); }
+  }));
+
+  const updateItems = (latestVersion && isNewerVersion(latestVersion, app.getVersion())) ? [
+    { label: `🆕 새 버전 v${latestVersion} 다운로드`, click: () => shell.openExternal(RELEASES_PAGE_URL) },
+    { type: 'separator' }
+  ] : [];
+
+  return Menu.buildFromTemplate([
+    ...updateItems,
+    {
+      label: '위젯 카드로 보기',
+      type: 'radio',
+      checked: mode === 'widget',
+      click: () => { applyMode('widget'); refreshTrayMenu(); }
+    },
+    {
+      label: '트레이 아이콘으로만 보기',
+      type: 'radio',
+      checked: mode === 'tray',
+      click: () => { applyMode('tray'); refreshTrayMenu(); }
+    },
+    {
+      label: stripAvailable ? '작업표시줄에 사용량 표시 (트레이 아이콘 대신)' : '작업표시줄에 사용량 표시 (이 PC에서는 사용 불가)',
+      type: 'checkbox',
+      enabled: stripAvailable,
+      checked: stripAvailable && getTaskbarStrip(),
+      // 글자 띠 메뉴에서 끄면 메뉴가 붙은 창을 없애게 되므로 메뉴 처리가 끝난 뒤에 바꾼다
+      click: (menuItem) => { const on = menuItem.checked; setTimeout(() => applyTaskbarStrip(on), 0); }
+    },
+    {
+      label: '항상 위로 고정',
+      type: 'checkbox',
+      checked: getAlwaysOnTop(),
+      click: (menuItem) => { applyAlwaysOnTop(menuItem.checked); }
+    },
+    { label: '위젯 투명도', submenu: opacityMenu },
+    { label: '위젯 크기', submenu: sizeMenu },
+    { label: '그래프 모양', submenu: graphStyleMenu },
+    { label: '색상 테마', submenu: themeMenu },
+    {
+      label: '위젯에 Fable 표시',
+      type: 'checkbox',
+      checked: getShowFable(),
+      click: (menuItem) => { applyShowFable(menuItem.checked); }
+    },
+    { type: 'separator' },
+    {
+      label: 'Claude 표시',
+      type: 'checkbox',
+      checked: getShowProvider('claude'),
+      click: (menuItem) => { applyShowProvider('claude', menuItem.checked); refreshTrayMenu(); }
+    },
+    {
+      label: 'Codex 표시',
+      type: 'checkbox',
+      checked: getShowProvider('codex'),
+      click: (menuItem) => { applyShowProvider('codex', menuItem.checked); refreshTrayMenu(); }
+    },
+    {
+      label: 'Gemini 표시',
+      type: 'checkbox',
+      checked: getShowProvider('gemini'),
+      click: (menuItem) => { applyShowProvider('gemini', menuItem.checked); refreshTrayMenu(); }
+    },
+    { type: 'separator' },
+    { label: '지금 새로고침', click: () => pollAll() },
+    { label: 'Claude 로그인 창 열기', click: () => openLoginWindow('claude') },
+    { label: 'Codex 로그인 창 열기', click: () => openLoginWindow('codex') },
+    { label: 'Gemini 로그인 창 열기', click: () => openLoginWindow('gemini') },
+    {
+      label: 'Windows 시작 시 자동 실행',
+      type: 'checkbox',
+      checked: app.getLoginItemSettings().openAtLogin,
+      click: (menuItem) => {
+        app.setLoginItemSettings({ openAtLogin: menuItem.checked });
+      }
+    },
+    { label: '사용법', click: () => openAboutWindow() },
+    { label: '디버그 로그 열기', click: () => shell.openPath(debugLogFile) },
+    { type: 'separator' },
+    { label: '종료', click: () => { app.quit(); } }
+  ]);
+}
+
+// 체크 상태가 바뀌면 트레이 메뉴를 새로 끼운다(트레이 아이콘이 빠져 있으면 할 일 없음 — 글자 띠 메뉴는 열 때마다 새로 만든다)
+function refreshTrayMenu() {
+  if (tray && !tray.isDestroyed()) tray.setContextMenu(buildTrayMenu());
+}
+
 function createTray() {
   tray = new Tray(path.join(__dirname, 'assets', 'tray.png'));
-  tray.setToolTip('Claude 사용량 위젯');
-
-  const buildMenu = () => {
-    const mode = getMode();
-    const opacity = getOpacity();
-    const colorTheme = getColorTheme();
-    const opacityMenu = [1, 0.85, 0.7, 0.55].map((v) => ({
-      label: `${Math.round(v * 100)}%`,
-      type: 'radio',
-      checked: Math.abs(opacity - v) < 0.001,
-      click: () => { applyOpacity(v); tray.setContextMenu(buildMenu()); }
-    }));
-    const themeMenu = [
-      { key: 'vivid', label: '컬러풀 (청록/핑크/노랑)' },
-      { key: 'muted', label: '차분한 톤 (무채색)' }
-    ].map((t) => ({
-      label: t.label,
-      type: 'radio',
-      checked: colorTheme === t.key,
-      click: () => { applyColorTheme(t.key); tray.setContextMenu(buildMenu()); }
-    }));
-    const widgetSize = getWidgetSize();
-    const sizeMenu = [
-      { key: 'small', label: '소' },
-      { key: 'medium', label: '중' },
-      { key: 'large', label: '대' }
-    ].map((s) => ({
-      label: s.label,
-      type: 'radio',
-      checked: widgetSize === s.key,
-      click: () => { applyWidgetSize(s.key); tray.setContextMenu(buildMenu()); }
-    }));
-    const graphStyle = getGraphStyle();
-    const graphStyleMenu = [
-      { key: 'ring', label: '원형' },
-      { key: 'bar', label: '막대형' }
-    ].map((g) => ({
-      label: g.label,
-      type: 'radio',
-      checked: graphStyle === g.key,
-      click: () => { applyGraphStyle(g.key); tray.setContextMenu(buildMenu()); }
-    }));
-
-    const updateItems = (latestVersion && isNewerVersion(latestVersion, app.getVersion())) ? [
-      { label: `🆕 새 버전 v${latestVersion} 다운로드`, click: () => shell.openExternal(RELEASES_PAGE_URL) },
-      { type: 'separator' }
-    ] : [];
-
-    return Menu.buildFromTemplate([
-      ...updateItems,
-      {
-        label: '위젯 카드로 보기',
-        type: 'radio',
-        checked: mode === 'widget',
-        click: () => { applyMode('widget'); tray.setContextMenu(buildMenu()); }
-      },
-      {
-        label: '트레이 아이콘으로만 보기',
-        type: 'radio',
-        checked: mode === 'tray',
-        click: () => { applyMode('tray'); tray.setContextMenu(buildMenu()); }
-      },
-      {
-        label: '항상 위로 고정',
-        type: 'checkbox',
-        checked: getAlwaysOnTop(),
-        click: (menuItem) => { applyAlwaysOnTop(menuItem.checked); }
-      },
-      { label: '위젯 투명도', submenu: opacityMenu },
-      { label: '위젯 크기', submenu: sizeMenu },
-      { label: '그래프 모양', submenu: graphStyleMenu },
-      { label: '색상 테마', submenu: themeMenu },
-      {
-        label: '위젯에 Fable 표시',
-        type: 'checkbox',
-        checked: getShowFable(),
-        click: (menuItem) => { applyShowFable(menuItem.checked); }
-      },
-      { type: 'separator' },
-      {
-        label: 'Claude 표시',
-        type: 'checkbox',
-        checked: getShowProvider('claude'),
-        click: (menuItem) => { applyShowProvider('claude', menuItem.checked); tray.setContextMenu(buildMenu()); }
-      },
-      {
-        label: 'Codex 표시',
-        type: 'checkbox',
-        checked: getShowProvider('codex'),
-        click: (menuItem) => { applyShowProvider('codex', menuItem.checked); tray.setContextMenu(buildMenu()); }
-      },
-      {
-        label: 'Gemini 표시',
-        type: 'checkbox',
-        checked: getShowProvider('gemini'),
-        click: (menuItem) => { applyShowProvider('gemini', menuItem.checked); tray.setContextMenu(buildMenu()); }
-      },
-      { type: 'separator' },
-      { label: '지금 새로고침', click: () => pollAll() },
-      { label: 'Claude 로그인 창 열기', click: () => openLoginWindow('claude') },
-      { label: 'Codex 로그인 창 열기', click: () => openLoginWindow('codex') },
-      { label: 'Gemini 로그인 창 열기', click: () => openLoginWindow('gemini') },
-      {
-        label: 'Windows 시작 시 자동 실행',
-        type: 'checkbox',
-        checked: app.getLoginItemSettings().openAtLogin,
-        click: (menuItem) => {
-          app.setLoginItemSettings({ openAtLogin: menuItem.checked });
-        }
-      },
-      { label: '사용법', click: () => openAboutWindow() },
-      { label: '디버그 로그 열기', click: () => shell.openPath(debugLogFile) },
-      { type: 'separator' },
-      { label: '종료', click: () => { app.quit(); } }
-    ]);
-  };
-
-  tray.setContextMenu(buildMenu());
-  rebuildTrayMenu = () => tray.setContextMenu(buildMenu());
-  tray.on('click', () => {
-    if (getMode() !== 'widget') return; // 트레이 전용 모드에서는 좌클릭으로 창을 띄우지 않음
-    if (!widgetWin) { createWidgetWindow(); return; }
-    widgetWin.isVisible() ? widgetWin.hide() : widgetWin.show();
-  });
+  tray.on('click', toggleWidgetFromTray);
+  refreshTrayMenu();
+  updateTray(); // 다시 만든 아이콘에도 지금 숫자 툴팁을 바로 넣는다
 }
 
 ipcMain.on('refresh-now', () => pollAll());
@@ -867,8 +957,23 @@ if (!gotLock) {
     debugLog('=== app ready, startup 시작 ===');
     createWidgetWindow();
     debugLog('createWidgetWindow 완료');
-    createTray();
-    debugLog('createTray 완료, pollAll 호출');
+    strip = createStrip({
+      getModel: stripModel,
+      onClick: toggleWidgetFromTray,
+      onContextMenu: popUpMenuFromStrip,
+      onPresenceChange: (present) => {
+        stripPresent = present;
+        setTimeout(syncTrayIcon, 0); // 메뉴 클릭 처리 도중에 트레이 아이콘을 없애지 않도록 한 박자 늦춘다
+      },
+      log: debugLog
+    });
+    // 글자 띠를 켜 뒀으면 트레이 아이콘은 글자 띠 판단(최대 5초)을 기다린다 — 켜자마자 떴다 사라지는 깜빡임 방지
+    if (getTaskbarStrip() && strip.available()) {
+      strip.start();
+    } else {
+      createTray();
+    }
+    debugLog('트레이·글자 띠 준비 완료, pollAll 호출');
 
     pollAll();
     pollTimer = setInterval(pollAll, POLL_INTERVAL_MS);
@@ -884,5 +989,17 @@ app.on('window-all-closed', (e) => {
 });
 
 app.on('before-quit', () => {
+  quitting = true; // 글자 띠를 끄면서 트레이 아이콘을 되살리지 않게
   if (pollTimer) clearInterval(pollTimer);
+  if (strip) strip.stop();
 });
+
+// 검증 스크립트(tools/strip-verify.js)가 main.js를 그대로 태운 뒤 상태를 들여다보는 창구 — 앱 동작에는 쓰지 않는다
+module.exports = {
+  __verify: {
+    hasTray: () => !!(tray && !tray.isDestroyed()),
+    stripPresent: () => stripPresent,
+    applyTaskbarStrip: (on) => applyTaskbarStrip(on),
+    strip: () => strip
+  }
+};
