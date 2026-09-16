@@ -147,7 +147,9 @@ public class UsageService extends Service {
     private String jsonFor(String provider) { return prefs.getString("last_" + provider + "_json", "{}"); }
 
     private String browserUserAgent(String current) {
-        return current.replace("; wv", "").replace(" Version/4.0", "") + " ClaudeUsageBar/1.0";
+        // Claude 로그인 페이지가 임베디드 앱 UA를 차단하거나 빈 화면으로 만들 수 있어
+        // WebView 표시용 꼬리표는 붙이지 않고 Chrome 계열 UA만 사용한다.
+        return current.replace("; wv", "").replace(" Version/4.0", "");
     }
 
     private void saveAndNotify(String provider, String json) {
