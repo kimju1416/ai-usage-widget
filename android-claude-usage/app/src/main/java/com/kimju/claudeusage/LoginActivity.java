@@ -84,7 +84,18 @@ public class LoginActivity extends Activity {
     }
     private int dp(int n) { return (int)(n * getResources().getDisplayMetrics().density + 0.5f); }
     private String browserUserAgent(String current){return current.replace("; wv","").replace(" Version/4.0","");}
-    private void finishLogin(){CookieManager.getInstance().flush();Intent i=new Intent(this,UsageService.class).setAction(UsageService.ACTION_REFRESH);if(Build.VERSION.SDK_INT>=26)startForegroundService(i);else startService(i);finish();}
+    private void finishLogin(){
+        CookieManager.getInstance().flush();
+        getSharedPreferences("usage", MODE_PRIVATE).edit()
+                .putBoolean("login_completed_" + provider, true)
+                .putLong("login_saved_" + provider, System.currentTimeMillis())
+                .commit();
+        Intent i=new Intent(this,UsageService.class).setAction(UsageService.ACTION_REFRESH);
+        if(Build.VERSION.SDK_INT>=26)startForegroundService(i);else startService(i);
+        finish();
+    }
+    @Override protected void onPause(){CookieManager.getInstance().flush();super.onPause();}
+    @Override protected void onStop(){CookieManager.getInstance().flush();super.onStop();}
     @Override protected void onDestroy(){if(popupDialog!=null&&popupDialog.isShowing())popupDialog.dismiss();if(web!=null)web.destroy();super.onDestroy();}
     @Override public void onBackPressed(){if(web!=null&&web.canGoBack())web.goBack();else super.onBackPressed();}
 }
