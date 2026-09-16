@@ -34,10 +34,10 @@ public class LoginActivity extends Activity {
         String name = UsageService.CLAUDE.equals(provider) ? "Claude" : "Codex";
 
         LinearLayout root = new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL); root.setBackgroundColor(Color.rgb(250,249,245));
-        LinearLayout bar = new LinearLayout(this); bar.setGravity(Gravity.CENTER_VERTICAL); bar.setPadding(10,0,10,0); bar.setBackgroundColor(Color.rgb(20,20,19));
-        Button close = new Button(this); close.setText("닫기"); close.setTextColor(Color.WHITE); close.setAllCaps(false); close.setOnClickListener(v -> finish()); bar.addView(close, new LinearLayout.LayoutParams(0,56,1));
-        status = new TextView(this); status.setText(name + " 로그인 페이지 로딩 중…"); status.setTextColor(Color.LTGRAY); status.setTextSize(12); status.setGravity(Gravity.CENTER); bar.addView(status, new LinearLayout.LayoutParams(0,56,2));
-        Button done = new Button(this); done.setText("로그인 완료"); done.setTextColor(Color.WHITE); done.setAllCaps(false); done.setBackgroundColor(Color.rgb(217,119,87)); done.setOnClickListener(v -> finishLogin()); bar.addView(done, new LinearLayout.LayoutParams(-2,56)); root.addView(bar);
+        LinearLayout bar = new LinearLayout(this); bar.setGravity(Gravity.CENTER_VERTICAL); bar.setPadding(dp(8),dp(6),dp(8),dp(6)); bar.setBackgroundColor(Color.rgb(20,20,19));
+        Button close = toolbarButton("닫기", false); close.setOnClickListener(v -> finish()); bar.addView(close, new LinearLayout.LayoutParams(dp(76),-1));
+        status = new TextView(this); status.setText(name + " 로그인 페이지 로딩 중…"); status.setTextColor(Color.LTGRAY); status.setTextSize(12); status.setGravity(Gravity.CENTER); bar.addView(status, new LinearLayout.LayoutParams(0,-1,1));
+        Button done = toolbarButton("로그인 완료", true); done.setOnClickListener(v -> finishLogin()); bar.addView(done, new LinearLayout.LayoutParams(dp(116),-1)); root.addView(bar, new LinearLayout.LayoutParams(-1,dp(58)));
 
         web = createWebView(name);
         web.loadUrl(UsageService.CLAUDE.equals(provider) ? "https://claude.ai/login" : "https://chatgpt.com/auth/login?next=%2Fcodex%2Fcloud%2Fsettings%2Fanalytics");
@@ -67,6 +67,13 @@ public class LoginActivity extends Activity {
         WebSettings s=view.getSettings(); s.setJavaScriptEnabled(true); s.setDomStorageEnabled(true); s.setDatabaseEnabled(true); s.setSupportZoom(false); s.setJavaScriptCanOpenWindowsAutomatically(true); s.setSupportMultipleWindows(true); s.setUserAgentString(browserUserAgent(s.getUserAgentString()));
         CookieManager.getInstance().setAcceptCookie(true); CookieManager.getInstance().setAcceptThirdPartyCookies(view,true); view.setBackgroundColor(Color.rgb(250,249,245));
     }
+    private Button toolbarButton(String text, boolean primary) {
+        Button b = new Button(this); b.setText(text); b.setTextColor(Color.WHITE); b.setTextSize(12); b.setAllCaps(false);
+        b.setMinHeight(0); b.setMinWidth(0); b.setPadding(dp(4),0,dp(4),0);
+        b.setBackgroundResource(primary ? R.drawable.bg_button : R.drawable.bg_secondary_button);
+        return b;
+    }
+    private int dp(int n) { return (int)(n * getResources().getDisplayMetrics().density + 0.5f); }
     private String browserUserAgent(String current){return current.replace("; wv","").replace(" Version/4.0","");}
     private void finishLogin(){CookieManager.getInstance().flush();Intent i=new Intent(this,UsageService.class).setAction(UsageService.ACTION_REFRESH);if(Build.VERSION.SDK_INT>=26)startForegroundService(i);else startService(i);finish();}
     @Override protected void onDestroy(){if(popupDialog!=null&&popupDialog.isShowing())popupDialog.dismiss();if(web!=null)web.destroy();super.onDestroy();}
