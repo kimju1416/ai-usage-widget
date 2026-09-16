@@ -54,14 +54,15 @@ public class UsageService extends Service {
         prefs = getSharedPreferences("usage", MODE_PRIVATE);
         createChannel();
         publishNotifications();
-        webView = new WebView(getApplicationContext());
+        webView = new WebView(this);
         WebSettings s = webView.getSettings();
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
         s.setDatabaseEnabled(true);
         s.setCacheMode(WebSettings.LOAD_DEFAULT);
-        s.setUserAgentString(s.getUserAgentString() + " ClaudeUsageBar/1.0");
+        s.setUserAgentString(browserUserAgent(s.getUserAgentString()));
         CookieManager.getInstance().setAcceptCookie(true);
+        CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
         webView.setWebViewClient(new WebViewClient() {
             @Override public void onPageFinished(WebView view, String url) {
                 if (polling && !readScheduled) {
@@ -144,6 +145,10 @@ public class UsageService extends Service {
     }
 
     private String jsonFor(String provider) { return prefs.getString("last_" + provider + "_json", "{}"); }
+
+    private String browserUserAgent(String current) {
+        return current.replace("; wv", "").replace(" Version/4.0", "") + " ClaudeUsageBar/1.0";
+    }
 
     private void saveAndNotify(String provider, String json) {
         prefs.edit().putString("last_" + provider + "_json", json).putLong("updated_" + provider, System.currentTimeMillis()).apply();
