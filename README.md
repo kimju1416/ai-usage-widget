@@ -143,6 +143,10 @@ Node.js가 설치되어 있어야 합니다.
 
 Electron + 순수 HTML/CSS/JS. 별도 프레임워크 없이 가볍게 만들었습니다. 작업표시줄 글자 띠의 자리 재기에만 [koffi](https://koffi.dev)(Win32 호출)를 씁니다.
 
+## Android 버전
+
+`android-claude-usage/`에 Android 앱이 추가되어 있습니다. Claude와 Codex를 각각 로그인하고, 상태바에 숫자형 사용량 알림을 표시할 수 있습니다. 설치용 디버그 APK는 [android-claude-usage/ClaudeUsageBar-debug.apk](android-claude-usage/ClaudeUsageBar-debug.apk)에서 받을 수 있습니다.
+
 ## 라이선스
 
 MIT
