@@ -46,6 +46,14 @@ public class LoginActivity extends Activity {
 
     private WebView createWebView(String name) {
         WebView view = new WebView(this); configure(view);
+        if (UsageService.CODEX.equals(provider)) {
+            // ChatGPT's Google flow can request a nested blank WebView on Android.
+            // Keep Codex authentication in the visible page instead of trapping
+            // the user behind an empty dialog window.
+            WebSettings settings = view.getSettings();
+            settings.setSupportMultipleWindows(false);
+            settings.setJavaScriptCanOpenWindowsAutomatically(false);
+        }
         view.setWebViewClient(new WebViewClient() {
             @Override public void onPageFinished(WebView v, String url) { status.setText(name + " 로그인 페이지"); }
             @Override public void onPageCommitVisible(WebView v, String url) { status.setText(name + " 로그인 페이지"); }
@@ -53,6 +61,7 @@ public class LoginActivity extends Activity {
         });
         view.setWebChromeClient(new WebChromeClient() {
             @Override public boolean onCreateWindow(WebView source, boolean dialog, boolean userGesture, Message resultMsg) {
+                if (UsageService.CODEX.equals(provider)) return false;
                 WebView child = createWebView(name);
                 popupDialog = new Dialog(LoginActivity.this); popupDialog.setTitle(name + " 인증"); popupDialog.setContentView(child); popupDialog.show();
                 popupDialog.setOnDismissListener(d -> child.destroy());

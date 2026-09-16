@@ -72,7 +72,7 @@ public class MainActivity extends Activity {
     }
 
     private View settingsRow() {
-        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(4),dp(12),dp(4),0); TextView head=label("상단바 숫자 표시 및 자동 갱신",14,Color.rgb(215,215,215),true);box.addView(head);
+        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(4),dp(12),dp(4),0); TextView head=label("상단바 숫자 표시 및 자동 갱신",14,Color.rgb(215,215,215),true);box.addView(head);box.addView(label("상태바 아이콘: C=Claude(주황) · C=Codex(파랑) · 위/아래 숫자=5시간/주간",12,Color.rgb(140,140,140),false));
         box.addView(toggle("Claude 숫자",UsageService.CLAUDE));box.addView(toggle("Codex 숫자",UsageService.CODEX)); return box;
     }
     private View toggle(String label,String provider) { LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);TextView t=label(label,13,Color.rgb(180,180,180),false);row.addView(t,new LinearLayout.LayoutParams(0,dp(45),1));Switch s=new Switch(this);s.setChecked(prefs.getBoolean("show_"+provider,UsageService.CLAUDE.equals(provider)));s.setContentDescription(label+" 표시");s.setOnCheckedChangeListener((b,checked)->{prefs.edit().putBoolean("show_"+provider,checked).apply();if(prefs.getBoolean("status_icon_enabled",true)&&anyProviderEnabled())startUsageService(true);else if(!anyProviderEnabled())stopService(new Intent(this,UsageService.class));});row.addView(s);return row; }

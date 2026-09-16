@@ -194,7 +194,7 @@ public class UsageService extends Service {
         Intent refresh = new Intent(this, UsageService.class).setAction(ACTION_REFRESH);
         PendingIntent refreshPi = PendingIntent.getService(this, provider.hashCode() + 100, refresh, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         Notification.Builder b = Build.VERSION.SDK_INT >= 26 ? new Notification.Builder(this, CHANNEL_ID) : new Notification.Builder(this);
-        b.setSmallIcon(Icon.createWithBitmap(makeNumericIcon(o)))
+        b.setSmallIcon(Icon.createWithBitmap(makeNumericIcon(provider, o)))
                 .setColor(CLAUDE.equals(provider) ? Color.rgb(217,119,87) : Color.rgb(92,118,180))
                 .setContentTitle(title).setContentText(content).setSubText(name + " · 1분마다 자동 갱신")
                 .setOngoing(true).setOnlyAlertOnce(true).setCategory(Notification.CATEGORY_STATUS)
@@ -203,13 +203,14 @@ public class UsageService extends Service {
         return b.build();
     }
 
-    private Bitmap makeNumericIcon(JSONObject o) {
-        Bitmap bitmap = Bitmap.createBitmap(64, 64, Bitmap.Config.ARGB_8888);
+    private Bitmap makeNumericIcon(String provider, JSONObject o) {
+        Bitmap bitmap = Bitmap.createBitmap(72, 64, Bitmap.Config.ARGB_8888);
         Canvas canvas = new Canvas(bitmap);
-        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG); paint.setColor(Color.WHITE); paint.setTextAlign(Paint.Align.CENTER);
+        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG); paint.setColor(CLAUDE.equals(provider) ? Color.rgb(217,119,87) : Color.rgb(92,118,180)); paint.setTextAlign(Paint.Align.CENTER);
         paint.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
-        paint.setTextSize(25); canvas.drawText(pct(o, "session"), 32, 27, paint);
-        paint.setTextSize(25); canvas.drawText(pct(o, "weekly"), 32, 57, paint);
+        paint.setTextSize(15); canvas.drawText("C", 10, 18, paint);
+        paint.setTextSize(22); canvas.drawText(pct(o, "session"), 42, 27, paint);
+        canvas.drawText(pct(o, "weekly"), 42, 57, paint);
         return bitmap;
     }
 
