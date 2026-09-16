@@ -74,8 +74,9 @@ public class UsageService extends Service {
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
-        if (enabledCount() == 0) { stopSelf(); return START_NOT_STICKY; }
-        if (intent != null && ACTION_REFRESH.equals(intent.getAction())) {
+        boolean refresh = intent != null && ACTION_REFRESH.equals(intent.getAction());
+        if (enabledCount() == 0 && !refresh) { stopSelf(); return START_NOT_STICKY; }
+        if (refresh) {
             handler.removeCallbacks(pollRunnable);
             poll();
         } else if (!polling) {
@@ -90,17 +91,18 @@ public class UsageService extends Service {
 
     private int enabledCount() { return (enabled(CLAUDE) ? 1 : 0) + (enabled(CODEX) ? 1 : 0); }
 
+    private int providerCount() { return 2; }
+
     private void poll() {
-        if (polling || webView == null || enabledCount() == 0) return;
+        if (polling || webView == null) return;
         polling = true;
         providerPass = 0;
         startNextProvider();
     }
 
     private void startNextProvider() {
-        if (providerPass >= enabledCount()) { finishCycle(); return; }
-        if (providerPass == 0) activeProvider = enabled(CLAUDE) ? CLAUDE : CODEX;
-        else activeProvider = enabled(CLAUDE) && activeProvider.equals(CLAUDE) ? CODEX : CLAUDE;
+        if (providerPass >= providerCount()) { finishCycle(); return; }
+        activeProvider = providerPass == 0 ? CLAUDE : CODEX;
         attempt = 0;
         readScheduled = false;
         String url = CLAUDE.equals(activeProvider)
@@ -130,11 +132,12 @@ public class UsageService extends Service {
 
     private void finishProvider() {
         providerPass++;
-        if (providerPass < enabledCount()) handler.postDelayed(this::startNextProvider, 250L); else finishCycle();
+        if (providerPass < providerCount()) handler.postDelayed(this::startNextProvider, 250L); else finishCycle();
     }
 
     private void finishCycle() {
         polling = false;
+        if (enabledCount() == 0) { stopSelf(); return; }
         handler.postDelayed(pollRunnable, POLL_MS);
     }
 
