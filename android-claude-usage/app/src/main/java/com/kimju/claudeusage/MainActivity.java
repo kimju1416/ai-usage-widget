@@ -34,7 +34,9 @@ public class MainActivity extends Activity {
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         getWindow().setStatusBarColor(Color.rgb(16,16,16)); getWindow().setNavigationBarColor(Color.rgb(16,16,16));
-        prefs = getSharedPreferences("usage", MODE_PRIVATE); setContentView(buildUi());
+        prefs = getSharedPreferences("usage", MODE_PRIVATE);
+        if (prefs.getInt("icon_defaults_version", 0) < 2) prefs.edit().putBoolean("show_claude", true).putBoolean("show_codex", true).putInt("icon_defaults_version", 2).apply();
+        setContentView(buildUi());
         renderProvider(UsageService.CLAUDE, UsageService.readStored(prefs, UsageService.CLAUDE));
         renderProvider(UsageService.CODEX, UsageService.readStored(prefs, UsageService.CODEX));
         if (prefs.getBoolean("status_icon_enabled", true) && anyProviderEnabled()) startUsageService(false);
@@ -62,7 +64,7 @@ public class MainActivity extends Activity {
         root.addView(providerCard(UsageService.CLAUDE,"Claude",Color.rgb(217,119,87)), cardParams(24,14));
         root.addView(providerCard(UsageService.CODEX,"Codex",Color.rgb(92,118,180)), cardParams(0,14));
         Button refresh=button("두 서비스 지금 새로고침",true); refresh.setOnClickListener(v->startUsageService(true)); root.addView(refresh,fullParams(8));
-        root.addView(settingsRow(),fullParams(10));
+        root.addView(settingsRow(),cardParams(10,0));
         Button claudeLogin=button("Claude 로그인 / 다시 로그인",false); claudeLogin.setOnClickListener(v->openLogin(UsageService.CLAUDE)); root.addView(claudeLogin,fullParams(10));
         Button codexLogin=button("Codex 로그인 / 다시 로그인",false); codexLogin.setOnClickListener(v->openLogin(UsageService.CODEX)); root.addView(codexLogin,fullParams(10));
         root.addView(label("참고",16,Color.WHITE,true),fullParams(26));
@@ -101,16 +103,16 @@ public class MainActivity extends Activity {
     }
 
     private View settingsRow() {
-        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(4),dp(12),dp(4),0); TextView head=label("상단바 숫자 표시 및 자동 갱신",14,Color.rgb(215,215,215),true);box.addView(head);box.addView(label("상태바 아이콘: C=Claude(주황) · C=Codex(파랑) · 위/아래 숫자=5시간/주간",12,Color.rgb(140,140,140),false));
-        box.addView(toggle("Claude 숫자",UsageService.CLAUDE));box.addView(toggle("Codex 숫자",UsageService.CODEX)); return box;
+        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(4),dp(12),dp(4),0); TextView head=label("상단바 표시 설정",15,Color.rgb(215,215,215),true);box.addView(head);box.addView(label("두 서비스를 모두 켜면 알림창과 최상단 상태바에 각각 표시됩니다. C 옆 위/아래 숫자는 5시간/주간입니다.",12,Color.rgb(160,160,160),false));
+        box.addView(toggle("상태바에 Claude 표시 · 주황 C",UsageService.CLAUDE));box.addView(toggle("상태바에 Codex 표시 · 파랑 C",UsageService.CODEX)); return box;
     }
-    private View toggle(String label,String provider) { LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);TextView t=label(label,13,Color.rgb(180,180,180),false);row.addView(t,new LinearLayout.LayoutParams(0,dp(45),1));Switch s=new Switch(this);s.setChecked(prefs.getBoolean("show_"+provider,UsageService.CLAUDE.equals(provider)));s.setContentDescription(label+" 표시");s.setOnCheckedChangeListener((b,checked)->{prefs.edit().putBoolean("show_"+provider,checked).apply();if(prefs.getBoolean("status_icon_enabled",true)&&anyProviderEnabled())startUsageService(true);else if(!anyProviderEnabled())stopService(new Intent(this,UsageService.class));});row.addView(s);return row; }
+    private View toggle(String label,String provider) { LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);TextView t=label(label,13,Color.rgb(180,180,180),false);row.addView(t,new LinearLayout.LayoutParams(0,dp(45),1));Switch s=new Switch(this);s.setChecked(prefs.getBoolean("show_"+provider,true));s.setContentDescription(label+" 표시");s.setOnCheckedChangeListener((b,checked)->{prefs.edit().putBoolean("show_"+provider,checked).apply();if(prefs.getBoolean("status_icon_enabled",true)&&anyProviderEnabled())startUsageService(true);else if(!anyProviderEnabled())stopService(new Intent(this,UsageService.class));});row.addView(s);return row; }
 
     private void renderProvider(String provider,JSONObject o) { ProviderViews v=UsageService.CLAUDE.equals(provider)?claudeViews:codexViews;if(v==null)return;boolean login=o.optBoolean("needsLogin"),ok=o.optBoolean("ok");v.status.setText(login?"로그인 필요":ok?"정상적으로 확인됨":"확인 중…");v.status.setTextColor(login?Color.rgb(255,185,75):ok?Color.rgb(120,215,160):Color.rgb(217,119,87));JSONObject session=o.optJSONObject("session"),weekly=o.optJSONObject("weekly");apply(session,v.sessionValue,v.sessionBar,v.sessionReset);apply(weekly,v.weeklyValue,v.weeklyBar,v.weeklyReset);if(v.heroSessionValue!=null)v.heroSessionValue.setText(percentText(session));if(v.heroWeeklyValue!=null)v.heroWeeklyValue.setText(percentText(weekly));long at=prefs.getLong("updated_"+provider,0);v.updated.setText(at==0?"마지막 확인: -":"마지막 확인: "+android.text.format.DateFormat.format("M/d HH:mm",at));}
     private String percentText(JSONObject x){if(x==null||!x.has("pct"))return "—%";return String.format(Locale.US,"%d%%",Math.max(0,Math.min(100,(int)Math.round(x.optDouble("pct")))));}
     private void apply(JSONObject x,TextView value,ProgressBar bar,TextView reset){if(x==null||!x.has("pct")){value.setText("—%");bar.setProgress(0);reset.setText("초기화: -");return;}int p=Math.max(0,Math.min(100,(int)Math.round(x.optDouble("pct"))));value.setText(String.format(Locale.US,"%d%%",p));bar.setProgress(p);reset.setText("초기화: "+x.optString("reset","-"));}
     private void openLogin(String provider){Intent i=new Intent(this,LoginActivity.class);i.putExtra(UsageService.EXTRA_PROVIDER,provider);startActivity(i);}
-    private boolean anyProviderEnabled(){return prefs.getBoolean("show_claude",true)||prefs.getBoolean("show_codex",false);}
+    private boolean anyProviderEnabled(){return prefs.getBoolean("show_claude",true)||prefs.getBoolean("show_codex",true);}
     private void startUsageService(boolean refresh){if(!anyProviderEnabled())return;Intent i=new Intent(this,UsageService.class);if(refresh)i.setAction(UsageService.ACTION_REFRESH);if(Build.VERSION.SDK_INT>=26)startForegroundService(i);else startService(i);}
     private TextView label(String s,int size,int color,boolean bold){TextView v=new TextView(this);v.setText(s);v.setTextSize(size);v.setTextColor(color);v.setTypeface(Typeface.DEFAULT,bold?Typeface.BOLD:Typeface.NORMAL);return v;}
     private Button button(String s,boolean primary){Button b=new Button(this);b.setText(s);b.setTextColor(Color.WHITE);b.setTextSize(14);b.setAllCaps(false);b.setMinHeight(dp(50));b.setBackgroundResource(primary?R.drawable.bg_button:R.drawable.bg_secondary_button);return b;}

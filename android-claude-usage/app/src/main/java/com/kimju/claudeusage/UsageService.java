@@ -94,7 +94,7 @@ public class UsageService extends Service {
     }
 
     private boolean enabled(String provider) {
-        return prefs.getBoolean("show_" + provider, CLAUDE.equals(provider));
+        return prefs.getBoolean("show_" + provider, true);
     }
 
     private int enabledCount() { return (enabled(CLAUDE) ? 1 : 0) + (enabled(CODEX) ? 1 : 0); }
@@ -195,7 +195,7 @@ public class UsageService extends Service {
             title = name + " 사용량 · 로그인 필요";
             content = name + "에 로그인하면 5시간/주간 사용량을 표시합니다";
         } else if (o.optBoolean("ok")) {
-            title = compactLine(o, "session", "5시간");
+            title = name + " · " + compactLine(o, "session", "5시간");
             content = compactLine(o, "weekly", "주간");
         } else {
             title = name + " 사용량 · 확인 중";
@@ -216,13 +216,14 @@ public class UsageService extends Service {
     }
 
     private Bitmap makeNumericIcon(String provider, JSONObject o) {
-        Bitmap bitmap = Bitmap.createBitmap(72, 64, Bitmap.Config.ARGB_8888);
+        Bitmap bitmap = Bitmap.createBitmap(96, 96, Bitmap.Config.ARGB_8888);
         Canvas canvas = new Canvas(bitmap);
         Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG); paint.setColor(CLAUDE.equals(provider) ? Color.rgb(217,119,87) : Color.rgb(92,118,180)); paint.setTextAlign(Paint.Align.CENTER);
         paint.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
-        paint.setTextSize(15); canvas.drawText("C", 10, 18, paint);
-        paint.setTextSize(22); canvas.drawText(pct(o, "session"), 42, 27, paint);
-        canvas.drawText(pct(o, "weekly"), 42, 57, paint);
+        paint.setSubpixelText(true);
+        paint.setTextSize(24); canvas.drawText("C", 17, 29, paint);
+        paint.setTextSize(29); canvas.drawText(pct(o, "session"), 59, 38, paint);
+        canvas.drawText(pct(o, "weekly"), 59, 86, paint);
         return bitmap;
     }
 
