@@ -90,7 +90,8 @@ public class LoginActivity extends Activity {
                 .putBoolean("login_completed_" + provider, true)
                 .putLong("login_saved_" + provider, System.currentTimeMillis())
                 .commit();
-        Intent i=new Intent(this,UsageService.class).setAction(UsageService.ACTION_REFRESH);
+        Intent i=new Intent(this,UsageService.class).setAction(UsageService.ACTION_REFRESH)
+                .putExtra(UsageService.EXTRA_PROVIDER, provider);
         boolean anyIcon=getSharedPreferences("usage", MODE_PRIVATE).getBoolean("show_claude", true)
                 || getSharedPreferences("usage", MODE_PRIVATE).getBoolean("show_codex", false);
         if(Build.VERSION.SDK_INT>=26 && anyIcon)startForegroundService(i);else startService(i);

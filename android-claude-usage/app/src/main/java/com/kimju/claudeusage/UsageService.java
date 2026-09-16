@@ -46,6 +46,7 @@ public class UsageService extends Service {
     private int attempt;
     private int providerPass;
     private String activeProvider = CLAUDE;
+    private String firstProvider = CLAUDE;
     private final Runnable pollRunnable = this::poll;
 
     @Override public void onCreate() {
@@ -77,7 +78,14 @@ public class UsageService extends Service {
         boolean refresh = intent != null && ACTION_REFRESH.equals(intent.getAction());
         if (enabledCount() == 0 && !refresh) { stopSelf(); return START_NOT_STICKY; }
         if (refresh) {
-            handler.removeCallbacks(pollRunnable);
+            String requested = intent.getStringExtra(EXTRA_PROVIDER);
+            if (CLAUDE.equals(requested) || CODEX.equals(requested)) firstProvider = requested;
+            handler.removeCallbacksAndMessages(null);
+            if (polling) {
+                polling = false;
+                readScheduled = false;
+                if (webView != null) webView.stopLoading();
+            }
             poll();
         } else if (!polling) {
             poll();
@@ -102,7 +110,7 @@ public class UsageService extends Service {
 
     private void startNextProvider() {
         if (providerPass >= providerCount()) { finishCycle(); return; }
-        activeProvider = providerPass == 0 ? CLAUDE : CODEX;
+        activeProvider = providerPass == 0 ? firstProvider : (CLAUDE.equals(firstProvider) ? CODEX : CLAUDE);
         attempt = 0;
         readScheduled = false;
         String url = CLAUDE.equals(activeProvider)
@@ -137,6 +145,7 @@ public class UsageService extends Service {
 
     private void finishCycle() {
         polling = false;
+        firstProvider = CLAUDE;
         if (enabledCount() == 0) { stopSelf(); return; }
         handler.postDelayed(pollRunnable, POLL_MS);
     }
@@ -248,10 +257,12 @@ public class UsageService extends Service {
             "return {ok:!!(session&&weekly),needsLogin:!session&&!weekly&&hasLoginForm,session:session,weekly:weekly};})()";
 
     private static final String CODEX_EXTRACT_SCRIPT = "(function(){" +
-            "const text=document.body.innerText||'';" +
-            "function grab(label){const m=text.match(new RegExp(label+'\\\\s*\\\\n+(\\\\d+)%\\\\s*\\\\n*(?:남음|left|remaining)\\\\s*\\\\n*([^\\\\n]+)','i'));return m?{reset:m[2].trim(),pct:100-parseInt(m[1],10)}:null;}" +
-            "const session=grab('(?:5시간\\\\s*사용\\\\s*한도|5[\\\\s-]*h(?:our)?\\\\s*(?:usage\\\\s*)?limit)');" +
-            "const weekly=grab('(?:주간\\\\s*사용\\\\s*한도|Weekly\\\\s*(?:usage\\\\s*)?limit)')||grab('(?:월간\\\\s*사용\\\\s*한도|Monthly\\\\s*(?:usage\\\\s*)?limit)');" +
-            "const hasLoginForm=!!document.querySelector('input[type=\\\"password\\\"],input[name=\\\"email\\\"]')||/로그인 또는 회원가입|Log in or sign up|계정으로 계속하기|Continue with/i.test(text);" +
+            "const raw=document.body.innerText||document.body.textContent||'';" +
+            "const lines=raw.split(/\\n+/).map(s=>s.trim()).filter(Boolean);" +
+            "function grab(kind){const label=kind==='session'?/(?:5\\s*[- ]?(?:hour|h)|5시간|(?:current\\s*)?session|세션)/i:/(?:weekly|주간|monthly|월간)/i;for(let i=0;i<lines.length;i++){if(!label.test(lines[i]))continue;const chunk=lines.slice(i,i+7).join(' ');const m=chunk.match(/(\\d{1,3})\\s*%\\s*(left|remaining|남음|used|사용됨)?/i);if(!m)continue;const n=parseInt(m[1],10);const isLeft=/(left|remaining|남음)/i.test(m[2]||'');const reset=(chunk.match(/(?:resets?|reset|초기화)[^|]{0,80}/i)||['-'])[0].trim();return {reset:reset,pct:isLeft?100-n:n};}return null;}" +
+            "const session=grab('session');" +
+            "const weekly=grab('weekly');" +
+            "const text=lines.join(' ');" +
+            "const hasLoginForm=!!document.querySelector('input[type=\\\"password\\\"],input[name=\\\"email\\\"]')||/로그인|log in|sign up|continue with google|email address|계정으로 계속하기/i.test(text);" +
             "return {ok:!!(session||weekly),needsLogin:!session&&!weekly&&hasLoginForm,session:session,weekly:weekly};})()";
 }
