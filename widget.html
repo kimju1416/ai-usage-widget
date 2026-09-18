@@ -285,6 +285,13 @@
     pctEl.textContent = clamped + '%';
   }
 
+  // 초기화 시각 글자 — 숫자가 하나도 없으면 시각이 아니다. Codex는 5시간을 하나도 안 쓰면(0%) 화면에
+  // 초기화 줄이 없어서, 읽는 규칙이 다음 줄 제목 «주간 사용 한도»를 초기화 자리로 가져온다(2026-09-19 실측) — 그때는 비운다
+  function resetText(r) {
+    const t = String(r == null ? '' : r);
+    return /\d/.test(t) ? t : '';
+  }
+
   function setBar(fillEl, pctEl, pct, color) {
     const clamped = Math.max(0, Math.min(100, pct));
     fillEl.style.width = clamped + '%';
@@ -329,25 +336,25 @@
     document.getElementById(prefix + '-sessionBarWrap').style.display = hasSession ? 'block' : 'none';
     if (hasSession) {
       setRing(document.getElementById(prefix + '-sessionArc'), document.getElementById(prefix + '-sessionPct'), data.session.pct, theme.session);
-      document.getElementById(prefix + '-sessionReset').textContent = data.session.reset;
+      document.getElementById(prefix + '-sessionReset').textContent = resetText(data.session.reset);
       setBar(document.getElementById(prefix + '-sessionBarFill'), document.getElementById(prefix + '-sessionBarPct'), data.session.pct, theme.session);
-      document.getElementById(prefix + '-sessionBarReset').textContent = data.session.reset;
+      document.getElementById(prefix + '-sessionBarReset').textContent = resetText(data.session.reset);
     }
     const hasWeekly = data.weekly && data.weekly.pct !== null;
     document.getElementById(prefix + '-weeklyWrap').style.display = hasWeekly ? 'flex' : 'none';
     document.getElementById(prefix + '-weeklyBarWrap').style.display = hasWeekly ? 'block' : 'none';
     if (hasWeekly) {
       setRing(document.getElementById(prefix + '-weeklyArc'), document.getElementById(prefix + '-weeklyPct'), data.weekly.pct, theme.weekly);
-      document.getElementById(prefix + '-weeklyReset').textContent = data.weekly.reset;
+      document.getElementById(prefix + '-weeklyReset').textContent = resetText(data.weekly.reset);
       setBar(document.getElementById(prefix + '-weeklyBarFill'), document.getElementById(prefix + '-weeklyBarPct'), data.weekly.pct, theme.weekly);
-      document.getElementById(prefix + '-weeklyBarReset').textContent = data.weekly.reset;
+      document.getElementById(prefix + '-weeklyBarReset').textContent = resetText(data.weekly.reset);
     }
 
     if (prefix === 'claude' && showFable && data.fable && data.fable.pct !== null) {
       setRing(document.getElementById('claude-fableArc'), document.getElementById('claude-fablePct'), data.fable.pct, theme.fable);
-      document.getElementById('claude-fableReset').textContent = data.fable.reset;
+      document.getElementById('claude-fableReset').textContent = resetText(data.fable.reset);
       setBar(document.getElementById('claude-fableBarFill'), document.getElementById('claude-fableBarPct'), data.fable.pct, theme.fable);
-      document.getElementById('claude-fableBarReset').textContent = data.fable.reset;
+      document.getElementById('claude-fableBarReset').textContent = resetText(data.fable.reset);
     }
 
     statusEl.textContent = data.ok ? '' : '데이터를 읽지 못했어요';
