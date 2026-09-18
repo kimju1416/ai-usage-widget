@@ -52,6 +52,11 @@
   .v.mid { color: var(--mid); }
   .v.high { color: var(--high); }
   body.stale #strip { opacity: 0.45; }
+  /* 작은 작업표시줄(윈도우 10 작은 아이콘 30px 등): 두 줄이 잘리지 않게 촘촘히 */
+  @media (max-height: 33px) {
+    body { font-size: 11px; }
+    #strip { line-height: 13px; row-gap: 0; }
+  }
 </style>
 </head>
 <body>

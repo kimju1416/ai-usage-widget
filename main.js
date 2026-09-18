@@ -167,9 +167,10 @@ function getTaskbarStrip() {
 // — 모든 추출 정규식은 한국어와 영어를 둘 다 지원해야 한다.
 const CLAUDE_EXTRACT_SCRIPT = `(function(){
   const text = document.body.innerText || '';
+  // 재설정 줄은 없을 수도 있다(이번 주를 아직 안 써서 재설정 시각이 안 나오는 경우 등) — 없으면 '-'
   function grab(label) {
-    const m = text.match(new RegExp(label + '\\\\s*\\\\n([^\\\\n]+)\\\\s*\\\\n(\\\\d+)%\\\\s*(?:사용됨|used)', 'i'));
-    return m ? { reset: m[1].trim(), pct: parseInt(m[2], 10) } : null;
+    const m = text.match(new RegExp(label + '\\\\s*\\\\n(?:([^\\\\n]+)\\\\s*\\\\n)?(\\\\d+)%\\\\s*(?:사용됨|used)', 'i'));
+    return m ? { reset: m[1] ? m[1].trim() : '-', pct: parseInt(m[2], 10) } : null;
   }
   const session = grab('(?:현재\\\\s*세션|Current\\\\s*session)');
   const weekly = grab('(?:모든\\\\s*모델|All\\\\s*models)');
@@ -177,7 +178,8 @@ const CLAUDE_EXTRACT_SCRIPT = `(function(){
   const hasLoginForm = !!document.querySelector('input[type="password"], input[name="email"]') ||
     /계속하려면 로그인|Continue with|Log in to Claude|로 계속하기|로그인 또는 회원가입|빠르게 생각하고/i.test(text);
   return {
-    ok: !!(session && weekly),
+    // 플랜에 따라 한쪽만 있는 경우도 있다(Codex 월간 전용처럼) — 한쪽만 읽혀도 보여주고 없는 쪽은 숨긴다
+    ok: !!(session || weekly),
     needsLogin: !session && !weekly && hasLoginForm,
     session: session,
     weekly: weekly,

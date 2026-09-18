@@ -154,20 +154,21 @@ function createStrip({ getModel, onClick, onContextMenu, onPresenceChange, log }
       shown = true;
     }
     // 실제 창 자리를 재서 다를 때만 옮긴다(배율 변경 등으로 윈도우가 창을 밀어도 다음 틱에 되돌린다)
+    // 크기는 Electron에게만 맡긴다. 이 창은 Electron이 보이지 않는 테두리(실측 세로 16px)를 더 잡고 있어서,
+    // SetWindowPos로 물리 크기를 작업표시줄 높이(48)에 억지로 맞추면 화면 안쪽이 32로 줄어
+    // 글씨가 위쪽 32px 안에서만 가운데 정렬됐다(1.0.22 «위에 딱 붙음»). 그래서 비교도 Electron 안쪽 크기로 한다.
     const actual = win32.readRect(hwnd);
-    if (layout.sameRect(actual, res.rect)) {
-      if (!raisePaused) win32.placeTopmost(hwnd, null);
-    } else {
-      // SetWindowPos만 쓰면 Electron이 기억하는 크기(처음 1×1)에 묶여 창이 잘린다(실측 65×65) —
-      // Electron에 DIP 크기를 먼저 알린 뒤 물리 픽셀로 정확히 맞춘다
-      win.setBounds({
-        x: Math.round(res.rect.x / scale),
-        y: Math.round(res.rect.y / scale),
-        width: Math.max(1, Math.round(res.rect.width / scale)),
-        height: Math.max(1, Math.round(res.rect.height / scale))
-      });
-      win32.placeTopmost(hwnd, res.rect);
-    }
+    const want = {
+      x: Math.round(res.rect.x / scale),
+      y: Math.round(res.rect.y / scale),
+      width: Math.max(1, Math.round(res.rect.width / scale)),
+      height: Math.max(1, Math.round(res.rect.height / scale))
+    };
+    const inner = win.getContentBounds();
+    const placed = actual && actual.left === res.rect.x && actual.top === res.rect.y &&
+      inner.width === want.width && inner.height === want.height;
+    if (!placed) win.setBounds(want);
+    if (!placed || !raisePaused) win32.placeTopmost(hwnd, null);
     note(`표시 ${JSON.stringify(res.rect)}`, `scale=${scale}`);
     applyPresence(null);
   }

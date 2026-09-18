@@ -168,14 +168,21 @@ app.whenReady().then(async () => {
     record('작업표시줄 밝기 테마 따라감', first.light === (win32.isTaskbarLight() === true), { dom: first.light, reg: win32.isTaskbarLight() });
 
     // 트레이 영역 폭이 바뀌면(아이콘 추가·제거) 글자 띠는 1초 틱마다 따라가므로 한 번만 재지 않고 기다린다
+    // 높이는 물리 창이 아니라 Electron 안쪽 화면으로 잰다 — 물리 창은 보이지 않는 테두리만큼 화면 아래로 더 나가 있다(1.0.23)
     const placedOk = (q, cssWidth) => q.r && q.info && q.r.right === q.info.notify.left - gap && q.r.top === q.info.taskbar.top &&
-      q.r.bottom === q.info.taskbar.bottom && q.r.left >= q.info.rebar.right &&
+      Math.round(stripWin.getContentBounds().height * scale) === q.info.taskbar.bottom - q.info.taskbar.top &&
+      q.r.left >= q.info.rebar.right &&
       q.r.right - q.r.left === Math.ceil(cssWidth * scale);
     let p = placement(stripWin);
     await waitFor(() => { p = placement(stripWin); return placedOk(p, first.width); }, 3000, 250);
     record('자리: 트레이 영역 왼쪽에 붙음·높이 같음·아이콘 줄과 안 겹침', placedOk(p, first.width),
       { rect: p.r, info: p.info, cssWidth: first.width, scale });
     const tbH = p.info.taskbar.bottom - p.info.taskbar.top;
+    // 두 줄이 작업표시줄 세로 가운데에 오는지(1.0.22는 안쪽 화면이 32로 줄어 위로 붙고, 40px 작업표시줄에선 «주간» 줄이 잘렸다)
+    const mid = JSON.parse(await stripWin.webContents.executeJavaScript(`(() => { const r = document.getElementById('strip').getBoundingClientRect();
+      return JSON.stringify({ vh: innerHeight, top: r.top, bottom: r.bottom }); })()`));
+    record('세로 가운데 정렬·두 줄 다 보임', mid.top >= 0 && mid.bottom <= mid.vh && Math.abs((mid.top + mid.bottom) / 2 - mid.vh / 2) <= 1 &&
+      Math.abs(mid.vh * scale - tbH) <= 1, mid);
     const shotRect = (r) => ({ x: Math.max(0, r.left - 240), y: p.info.taskbar.top, width: p.info.taskbar.right - Math.max(0, r.left - 240), height: tbH });
     await shot('_strip-shot-initial.png', shotRect(p.r));
 
