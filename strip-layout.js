@@ -14,8 +14,9 @@ function levelOf(pct) {
   return 'low';
 }
 
-function cellFor(data, field) {
-  if (!data) return { text: '…', level: 'none' };
+// failed: 값이 한 번도 안 들어온 채 읽기가 연달아 실패한 서비스 — «…»(곧 올 것) 대신 «확인 필요»
+function cellFor(data, field, failed) {
+  if (!data) return { text: failed ? '확인 필요' : '…', level: 'none' };
   if (data.needsLogin) return { text: '로그인', level: 'none' };
   const metric = data[field];
   // 일부 플랜은 5시간 한도가 아예 없다(Codex 월간 전용 등) — 빈칸 대신 줄표
@@ -25,12 +26,12 @@ function cellFor(data, field) {
 }
 
 // providers: [{ key, label }] — 켜 둔 서비스만, 표시 순서대로
-function buildStripModel(lastData, providers) {
+function buildStripModel(lastData, providers, failed) {
   const list = Array.isArray(providers) ? providers : [];
   return {
     rows: ROWS.map((row) => ({
       label: row.label,
-      cells: list.map((p) => ({ name: p.label, ...cellFor(lastData ? lastData[p.key] : null, row.field) }))
+      cells: list.map((p) => ({ name: p.label, ...cellFor(lastData ? lastData[p.key] : null, row.field, !!(failed && failed[p.key])) }))
     }))
   };
 }

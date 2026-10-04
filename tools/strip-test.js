@@ -27,6 +27,12 @@ check('단계 경계', () => {
 
 check('칸 내용', () => {
   assert.deepStrictEqual(L.cellFor(null, 'session'), { text: '…', level: 'none' });
+  // 값이 한 번도 안 들어온 채 읽기가 연달아 실패했으면 «…»(곧 올 것) 대신 «확인 필요» — 2026-10 Codex 화면 개편 때 영영 «…»로 보였다
+  assert.deepStrictEqual(L.cellFor(null, 'session', true), { text: '확인 필요', level: 'none' });
+  assert.deepStrictEqual(L.cellFor({ ok: true, session: { pct: 10 } }, 'session', true), { text: '10', level: 'low' }, '값이 있으면 failed 표시는 무시');
+  const mf = L.buildStripModel({ claude: { ok: true, session: { pct: 5 }, weekly: { pct: 6 } }, codex: null }, [{ key: 'claude', label: 'Claude' }, { key: 'codex', label: 'Codex' }], { claude: false, codex: true });
+  assert.strictEqual(mf.rows[0].cells[1].text, '확인 필요');
+  assert.strictEqual(mf.rows[0].cells[0].text, '5');
   assert.deepStrictEqual(L.cellFor({ needsLogin: true }, 'session'), { text: '로그인', level: 'none' });
   assert.deepStrictEqual(L.cellFor({ ok: true, session: null }, 'session'), { text: '—', level: 'none' });
   assert.deepStrictEqual(L.cellFor({ ok: true, session: { pct: 82.4 } }, 'session'), { text: '82', level: 'high' });

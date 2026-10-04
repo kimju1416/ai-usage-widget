@@ -195,15 +195,46 @@ const CLAUDE_LOGIN_CHECK_SCRIPT = `(!location.href.includes('/login') && (
 // Codex는 "N% 남음"(remaining) 형태라 사용됨%로 변환한다. 영어 UI는 "N% left/remaining".
 // 플랜에 따라 "5시간+주간" 대신 "월간 사용 한도" 하나만 있는 계정도 있다(공유 에이전트 한도 등) —
 // 이 경우 session은 없는 게 정상이고, weekly 자리에 월간 값을 대신 채워서 최소한 값은 보여준다.
+// 🔴 2026-10 ChatGPT 설정 개편: 한도 숫자가 /settings/usage(개요 탭)로 옮겨 갔고, 라벨이 «5시간 단위 한도»가 됐으며,
+// 초기화 줄이 퍼센트 «앞»으로 왔다(예전엔 뒤). 그래서 라벨마다 «다음 라벨 전까지» 블록을 잘라 그 안에서
+// 퍼센트와 초기화 줄을 앞뒤 순서에 상관없이 찾는다. «사용량 분석» 탭엔 «N% 남음»이 없어서 못 읽는 게 맞다(ok=false).
+// 고칠 땐 TD2 main/aiusage.js와 글자 그대로 같게 둔다.
 const CODEX_EXTRACT_SCRIPT = `(function(){
   const text = document.body.innerText || '';
-  function grab(label) {
-    const m = text.match(new RegExp(label + '\\\\s*\\\\n+(\\\\d+)%\\\\s*\\\\n*(?:남음|left|remaining)\\\\s*\\\\n*([^\\\\n]+)', 'i'));
-    return m ? { reset: m[2].trim(), pct: 100 - parseInt(m[1], 10) } : null;
+  const KINDS = [
+    ['session', /5시간\\s*(?:사용\\s*|단위\\s*)?한도|5[\\s-]*h(?:our)?\\s*(?:usage\\s*)?limit/gi],
+    ['weekly', /주간\\s*(?:사용\\s*)?한도|Weekly\\s*(?:usage\\s*)?limit/gi],
+    ['monthly', /월간\\s*(?:사용\\s*)?한도|Monthly\\s*(?:usage\\s*)?limit/gi]
+  ];
+  const hits = [];
+  for (const k of KINDS) {
+    let m;
+    while ((m = k[1].exec(text))) hits.push({ kind: k[0], start: m.index, end: m.index + m[0].length });
   }
-  const session = grab('(?:5시간\\\\s*사용\\\\s*한도|5[\\\\s-]*h(?:our)?\\\\s*(?:usage\\\\s*)?limit)');
-  const weekly = grab('(?:주간\\\\s*사용\\\\s*한도|Weekly\\\\s*(?:usage\\\\s*)?limit)') ||
-    grab('(?:월간\\\\s*사용\\\\s*한도|Monthly\\\\s*(?:usage\\\\s*)?limit)');
+  hits.sort((a, b) => a.start - b.start);
+  const lines = (s) => s.split('\\n').map((x) => x.trim()).filter(Boolean);
+  const isReset = (x) => /\\d/.test(x) && /초기화|재설정|reset/i.test(x);
+  function grab(kind) {
+    for (let i = 0; i < hits.length; i++) {
+      if (hits[i].kind !== kind) continue;
+      const stop = i + 1 < hits.length ? hits[i + 1].start : text.length;
+      const block = text.slice(hits[i].end, Math.min(stop, hits[i].end + 300));
+      const pm = block.match(/(\\d+(?:\\.\\d+)?)%\\s*(?:남음|left|remaining)/i);
+      if (!pm) continue;
+      let reset = '';
+      const before = lines(block.slice(0, pm.index)).filter(isReset);
+      if (before.length) reset = before[before.length - 1];
+      else {
+        const after = lines(block.slice(pm.index + pm[0].length)).slice(0, 2).filter(isReset);
+        if (after.length) reset = after[0];
+      }
+      const dur = reset.match(/^초기화까지\\s*(.+?)\\s*남았습니다/);
+      return { reset: dur ? dur[1] + ' 후 초기화' : reset, pct: 100 - Math.round(parseFloat(pm[1])) };
+    }
+    return null;
+  }
+  const session = grab('session');
+  const weekly = grab('weekly') || grab('monthly');
   const hasLoginForm = !!document.querySelector('input[type="password"], input[name="email"]') ||
     /로그인 또는 회원가입|Log in or sign up|계정으로 계속하기|Continue with/i.test(text);
   return {
@@ -278,7 +309,7 @@ const PROVIDERS = {
     label: 'Codex',
     partition: 'persist:codexusage',
     loginUrl: 'https://chatgpt.com/auth/login',
-    usageUrl: () => `https://chatgpt.com/codex/cloud/settings/analytics?_w=${Date.now()}#usage`,
+    usageUrl: () => `https://chatgpt.com/settings/usage?tab=overview&_w=${Date.now()}`,
     extractScript: CODEX_EXTRACT_SCRIPT,
     loginCheckScript: CODEX_LOGIN_CHECK_SCRIPT
   },
@@ -470,7 +501,7 @@ function statusLines() {
     const data = lastData[key];
     const label = PROVIDERS[key].label;
     if (!data) {
-      lines.push(`${label}: 불러오는 중`);
+      lines.push(readFailed(key) ? `${label}: 읽기 실패` : `${label}: 불러오는 중`);
     } else if (data.needsLogin) {
       lines.push(`${label}: 로그인 필요`);
     } else if (!data.ok) {
@@ -495,7 +526,9 @@ function updateTray() {
 // 작업표시줄 글자 띠에 보낼 내용 — 켜 둔 서비스만, 5시간/주간 두 줄
 function stripModel() {
   const providers = ALL_PROVIDER_KEYS.filter(getShowProvider).map((key) => ({ key, label: PROVIDERS[key].label }));
-  return { ...stripLayout.buildStripModel(lastData, providers), tooltip: statusLines().join('\n') };
+  const failed = {};
+  for (const p of providers) failed[p.key] = readFailed(p.key);
+  return { ...stripLayout.buildStripModel(lastData, providers, failed), tooltip: statusLines().join('\n') };
 }
 
 function sendToWidget() {
@@ -513,7 +546,8 @@ function sendToWidget() {
       showFable: getShowFable(),
       colorTheme: getColorTheme(),
       sizeScale: WIDGET_SIZE_SCALE[getWidgetSize()],
-      graphStyle: getGraphStyle()
+      graphStyle: getGraphStyle(),
+      readFailed: { claude: readFailed('claude'), codex: readFailed('codex'), gemini: readFailed('gemini') }
     });
   }
 }
@@ -522,6 +556,11 @@ const POLL_TIMEOUT_MS = 25 * 1000; // 폴링 1회 최대 허용 시간 — 이�
 const pollInFlight = { claude: false, codex: false, gemini: false };
 const pollGeneration = { claude: 0, codex: 0, gemini: 0 }; // 타임아웃난 이전 폴링이 뒤늦게 끝나 최신 결과를 덮어쓰는 것을 막기 위한 세대 토큰
 const loginInFlight = { claude: false, codex: false, gemini: false }; // 로그인 창이 열려있는 동안엔 같은 워커 창을 폴링이 건드리지 않게 함
+// 값이 한 번도 안 들어온 채로 읽기가 연달아 실패한 횟수 — 서비스가 화면을 바꾸면 «불러오는 중»·«…»으로 영영 멈춰 보이므로(2026-10 Codex)
+// 3번(약 3분) 이어지면 «읽기 실패»로 바꿔 보여 준다. 성공하거나 로그인 필요가 확인되면 0으로 돌아간다.
+const readFail = { claude: 0, codex: 0, gemini: 0 };
+const READ_FAIL_SHOW_AFTER = 3;
+function readFailed(key) { return !lastData[key] && readFail[key] >= READ_FAIL_SHOW_AFTER; }
 
 function withTimeout(promise, ms, label) {
   return new Promise((resolve, reject) => {
@@ -608,11 +647,14 @@ async function pollProvider(providerKey) {
           const weeklyStr = result.weekly ? `7d=${result.weekly.pct}%` : '7d=(없음)';
           debugLog(`[${providerKey}] poll ok=true ${sessionStr} ${weeklyStr}${fableStr}`);
           lastData[providerKey] = result;
+          readFail[providerKey] = 0;
         } else if (result.needsLogin) {
           // 로그인 필요 상태는 화면에 그대로 반영해야 하는 진짜 상태 전환이다
           debugLog(`[${providerKey}] poll needsLogin=true`);
           lastData[providerKey] = result;
+          readFail[providerKey] = 0;
         } else {
+          readFail[providerKey]++;
           // 일시적 실패(서비스 쪽 오류, 페이지가 덜 로드된 경우 등)는 lastData를 건드리지 않는다.
           // 예전엔 이런 실패 시에도 결과를 그대로 덮어써서, 예를 들어 Claude에서 세션/주간 값을
           // 못 읽었는데 Fable만 우연히 읽혀서 "5시간·주간은 사라지고 Fable만 남는" 것처럼 보이는
@@ -631,6 +673,7 @@ async function pollProvider(providerKey) {
       // 값을 그대로 유지해야 위젯이 갑자기 텅 비어 보이는 일이 없다(처음 폴링부터 실패하면
       // lastData가 애초에 null이라 "불러오는 중"으로 정상 표시됨).
       debugLog(`[${providerKey}] poll error: ${e.message}`);
+      readFail[providerKey]++;
     }
     // 타임아웃 시 워커 창에 남은 요청을 실제로 끊어서, 좀비 프로미스가 다음 폴링 창을 계속 붙잡지 않게 한다
     if (win && !win.isDestroyed()) {

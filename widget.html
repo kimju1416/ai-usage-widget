@@ -307,7 +307,7 @@
   document.getElementById('codex-loginBtn').addEventListener('click', () => window.widgetAPI.openLogin('codex'));
   document.getElementById('gemini-loginBtn').addEventListener('click', () => window.widgetAPI.openLogin('gemini'));
 
-  function renderSection(prefix, data, theme, showFable) {
+  function renderSection(prefix, data, theme, showFable, failed) {
     const loginBtn = document.getElementById(prefix + '-loginBtn');
     const statusEl = document.getElementById(prefix + '-status');
 
@@ -318,7 +318,7 @@
 
     if (!data) {
       loginBtn.style.display = 'none';
-      statusEl.textContent = '불러오는 중...';
+      statusEl.textContent = failed ? '값을 읽지 못했어요' : '불러오는 중...';
       return;
     }
     if (data.needsLogin) {
@@ -410,9 +410,10 @@
     document.getElementById('codexSection').classList.toggle('on', !!data.showCodex);
     document.getElementById('geminiSection').classList.toggle('on', !!data.showGemini);
 
-    if (data.showClaude) renderSection('claude', data.claude, theme, data.showFable);
-    if (data.showCodex) renderSection('codex', data.codex, theme, false);
-    if (data.showGemini) renderSection('gemini', data.gemini, theme, false);
+    const rf = data.readFailed || {};
+    if (data.showClaude) renderSection('claude', data.claude, theme, data.showFable, !!rf.claude);
+    if (data.showCodex) renderSection('codex', data.codex, theme, false, !!rf.codex);
+    if (data.showGemini) renderSection('gemini', data.gemini, theme, false, !!rf.gemini);
 
     const anyOk = (data.showClaude && data.claude && data.claude.ok) ||
       (data.showCodex && data.codex && data.codex.ok) ||
