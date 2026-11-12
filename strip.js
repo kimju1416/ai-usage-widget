@@ -31,8 +31,17 @@ ipcMain.on('strip-click', (event) => {
 ipcMain.on('strip-context', (event) => {
   if (current && current.owns(event.sender)) current.handleContextMenu();
 });
+ipcMain.on('strip-hover', (event, on) => {
+  if (current && current.owns(event.sender)) current.handleHover(!!on);
+});
+ipcMain.on('strip-pop-size', (event, size) => {
+  if (current && current.ownsPop(event.sender)) current.setPopSize(size);
+});
 
-function createStrip({ getModel, onClick, onContextMenu, onPresenceChange, log }) {
+const POP_TICK_MS = 250; // 안내 창이 떠 있는 동안 커서가 글자 띠를 벗어났는지 보는 간격
+const POP_GAP = 6;       // 글자 띠 위로 띄울 간격(DIP)
+
+function createStrip({ getModel, getHoverModel, onClick, onContextMenu, onPresenceChange, log }) {
   let win = null;
   let hwnd = 0;
   let timer = null;
@@ -51,6 +60,13 @@ function createStrip({ getModel, onClick, onContextMenu, onPresenceChange, log }
   let raisePaused = false;    // 글자 띠에서 연 메뉴가 떠 있는 동안 — 다시 올리면 메뉴 아랫부분을 가린다
   let contextCount = 0;       // 오른쪽 클릭이 메인까지 도착한 횟수(검증용)
   let hookRightUps = 0;       // 창 메시지 단계에서 본 오른쪽 버튼 뗌 횟수(검증용)
+  // 마우스 올림 안내 창(v1.0.27)
+  let pop = null;
+  let popLoaded = false;
+  let popShown = false;
+  let popSize = null;         // 안내 창 렌더러가 잰 내용 크기(DIP)
+  let popTimer = null;
+  let popTicks = 0;
 
   // 1초마다 도는 자리라 같은 판단은 한 번만 기록한다
   function note(key, detail) {
@@ -181,7 +197,116 @@ function createStrip({ getModel, onClick, onContextMenu, onPresenceChange, log }
     }
   }
 
+  // ── 마우스 올림 안내 창 ──
+  function cursorOnStrip() {
+    if (!win || win.isDestroyed() || !shown) return false;
+    const c = screen.getCursorScreenPoint();
+    const b = win.getBounds();
+    return c.x >= b.x && c.x < b.x + b.width && c.y >= b.y && c.y < b.y + b.height;
+  }
+
+  function pushPop() {
+    if (!pop || pop.isDestroyed() || !popLoaded || !getHoverModel) return;
+    let model;
+    try {
+      model = getHoverModel();
+    } catch (e) {
+      log(`[strip] 안내 창 내용 만들기 오류: ${e.message}`);
+      return;
+    }
+    pop.webContents.send('strip-pop-model', { ...model, light: lightTheme === true });
+  }
+
+  function placePop() {
+    if (!pop || pop.isDestroyed() || !popSize || !win || win.isDestroyed()) return false;
+    const sb = win.getBounds();
+    const wa = screen.getDisplayMatching(sb).workArea;
+    const w = Math.max(1, popSize.w);
+    const h = Math.max(1, popSize.h);
+    let x = sb.x + sb.width - w;                  // 오른쪽 끝을 글자 띠에 맞춘다
+    x = Math.max(wa.x + 4, Math.min(x, wa.x + wa.width - w - 4));
+    const y = Math.max(wa.y, sb.y - h - POP_GAP); // 작업표시줄 바로 위
+    pop.setBounds({ x, y, width: w, height: h });
+    return true;
+  }
+
+  function hidePop() {
+    if (popTimer) { clearInterval(popTimer); popTimer = null; }
+    if (popShown && pop && !pop.isDestroyed()) pop.hide();
+    popShown = false;
+  }
+
+  function destroyPop() {
+    hidePop();
+    const p = pop;
+    pop = null;
+    popLoaded = false;
+    popSize = null;
+    if (p && !p.isDestroyed()) p.destroy();
+  }
+
+  function createPop() {
+    pop = new BrowserWindow({
+      x: 0,
+      y: 0,
+      width: 1,
+      height: 1,
+      show: false,
+      frame: false,
+      transparent: false,
+      backgroundColor: lightTheme ? '#f7f7f7' : '#202020',
+      hasShadow: true,
+      resizable: false,
+      movable: false,
+      minimizable: false,
+      maximizable: false,
+      fullscreenable: false,
+      skipTaskbar: true,
+      focusable: false,
+      alwaysOnTop: true,
+      title: '',
+      webPreferences: {
+        preload: path.join(__dirname, 'strip-preload.js'),
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+        spellcheck: false
+      }
+    });
+    const myPop = pop;
+    myPop.setAlwaysOnTop(true, 'screen-saver');
+    myPop.setIgnoreMouseEvents(true); // 보기만 하는 창 — 커서가 올라가도 아래로 통과
+    myPop.on('closed', () => { if (pop === myPop) { pop = null; popLoaded = false; popShown = false; popSize = null; } });
+    myPop.webContents.on('render-process-gone', () => { if (pop === myPop) destroyPop(); });
+    myPop.webContents.once('did-finish-load', () => {
+      if (pop !== myPop) return;
+      popLoaded = true;
+      pushPop();
+    });
+    myPop.loadFile(path.join(__dirname, 'strip-pop.html'));
+  }
+
+  function showPop() {
+    if (!getHoverModel || !shown || raisePaused) return;
+    if (!pop || pop.isDestroyed()) createPop();
+    else pushPop();
+    if (!popTimer) {
+      popTicks = 0;
+      popTimer = setInterval(() => {
+        try {
+          if (!cursorOnStrip() || raisePaused) { hidePop(); return; }
+          popTicks += 1;
+          if (popTicks % 4 === 0) pushPop(); // 1초마다 남은 시간을 새로 센다
+        } catch (e) {
+          note('오류', e && e.stack ? e.stack : String(e));
+          hidePop();
+        }
+      }, POP_TICK_MS);
+    }
+  }
+
   function destroyWindow() {
+    destroyPop();
     const w = win;
     win = null;
     hwnd = 0;
@@ -330,7 +455,28 @@ function createStrip({ getModel, onClick, onContextMenu, onPresenceChange, log }
     handleClick() {
       try { onClick(); } catch (e) { log(`[strip] 클릭 처리 오류: ${e.message}`); }
     },
+    handleHover(on) {
+      try {
+        if (on) showPop();
+        else if (!cursorOnStrip()) hidePop();
+      } catch (e) { log(`[strip] 안내 창 오류: ${e.message}`); }
+    },
+    ownsPop(sender) {
+      return !!(pop && !pop.isDestroyed() && sender && sender.id === pop.webContents.id);
+    },
+    setPopSize(size) {
+      const w = Math.ceil(Number(size && size.w));
+      const h = Math.ceil(Number(size && size.h));
+      if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return;
+      popSize = { w: Math.min(w, 520), h: Math.min(h, 600) };
+      if (!popTimer) return;       // 그새 커서가 떠났으면 띄우지 않는다
+      if (placePop() && !popShown) {
+        pop.showInactive();
+        popShown = true;
+      }
+    },
     handleContextMenu() {
+      hidePop();
       contextCount += 1;
       try { onContextMenu(); } catch (e) { log(`[strip] 메뉴 열기 오류: ${e.message}`); }
     },
@@ -340,7 +486,9 @@ function createStrip({ getModel, onClick, onContextMenu, onPresenceChange, log }
       raisePaused = !!paused;
     },
     // 검증 스크립트 전용
-    debugState: () => ({ running: !!win, loaded, shown, contentWidth, lightTheme, lastNote, hwnd, presence, raisePaused, contextCount, hookRightUps }),
+    debugState: () => ({ running: !!win, loaded, shown, contentWidth, lightTheme, lastNote, hwnd, presence, raisePaused, contextCount, hookRightUps, popShown, popSize }),
+    // 검증 스크립트 전용: 마우스 올림을 흉내 낸다
+    debugHover: (on) => self.handleHover(on),
     // 검증 스크립트 전용: 작업표시줄 실측값 대신 넣은 값으로 판단하게 한다(null이면 다시 실측)
     debugSetTaskbarOverride(info) {
       taskbarOverride = info || null;

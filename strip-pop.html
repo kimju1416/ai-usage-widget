@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<title></title>
+<!-- 작업표시줄 글자 띠에 마우스를 올리면 바로 위에 뜨는 안내 창(v1.0.27) — 5시간·주간 초기화까지 남은 시간 -->
+<style>
+  html, body { margin: 0; overflow: hidden; }
+  body {
+    --bg: #202020;
+    --line: #3a3a3a;
+    --text: #f2f2f2;
+    --sub: #a6a6a6;
+    --low: #6fd2ae;
+    --mid: #f0c36a;
+    --high: #f49b9b;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Segoe UI Variable Text", "Segoe UI", "Malgun Gothic", sans-serif;
+    font-size: 12.5px;
+    user-select: none;
+    cursor: default;
+  }
+  body.light {
+    --bg: #f7f7f7;
+    --line: #dedede;
+    --text: #1b1b1b;
+    --sub: #5d5d5d;
+    --low: #0a6a4e;
+    --mid: #8a5200;
+    --high: #b3261e;
+  }
+  #box {
+    display: inline-block;
+    padding: 10px 14px 11px;
+    border: 1px solid var(--line);
+    box-sizing: border-box;
+    white-space: nowrap;
+  }
+  .svc + .svc { margin-top: 9px; padding-top: 9px; border-top: 1px solid var(--line); }
+  .name { font-weight: 600; margin-bottom: 4px; }
+  table { border-collapse: collapse; }
+  td { padding: 2px 0; vertical-align: baseline; }
+  td.lbl { color: var(--sub); padding-right: 12px; }
+  td.pct { text-align: right; padding-right: 14px; font-variant-numeric: tabular-nums; font-weight: 600; }
+  td.left { padding-right: 10px; font-variant-numeric: tabular-nums; }
+  td.at { color: var(--sub); font-variant-numeric: tabular-nums; }
+  .low { color: var(--low); }
+  .mid { color: var(--mid); }
+  .high { color: var(--high); }
+  .note { color: var(--sub); }
+</style>
+</head>
+<body>
+<div id="box"></div>
+<script>
+  const box = document.getElementById('box');
+  function el(tag, cls, text) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+  function render(model) {
+    document.body.classList.toggle('light', model.light === true);
+    const frag = document.createDocumentFragment();
+    for (const svc of (model.services || [])) {
+      const wrap = el('div', 'svc');
+      wrap.appendChild(el('div', 'name', svc.name));
+      if (svc.note) {
+        wrap.appendChild(el('div', 'note', svc.note));
+      } else {
+        const table = el('table');
+        for (const r of svc.rows) {
+          const tr = el('tr');
+          tr.appendChild(el('td', 'lbl', r.label));
+          tr.appendChild(el('td', 'pct ' + r.level, r.pct + '%'));
+          tr.appendChild(el('td', 'left', r.left ? r.left + ' 뒤 초기화' : (r.at ? '' : '초기화 시각 없음')));
+          tr.appendChild(el('td', 'at', r.at || ''));
+          table.appendChild(tr);
+        }
+        wrap.appendChild(table);
+      }
+      frag.appendChild(wrap);
+    }
+    box.replaceChildren(frag);
+    const rect = box.getBoundingClientRect();
+    window.stripAPI.reportPopSize(Math.ceil(rect.width), Math.ceil(rect.height));
+  }
+  window.stripAPI.onPop(render);
+</script>
+</body>
+</html>

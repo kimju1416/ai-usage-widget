@@ -540,7 +540,15 @@ function stripModel() {
   const providers = ALL_PROVIDER_KEYS.filter(getShowProvider).map((key) => ({ key, label: PROVIDERS[key].label }));
   const failed = {};
   for (const p of providers) failed[p.key] = readFailed(p.key);
-  return { ...stripLayout.buildStripModel(lastData, providers, failed), tooltip: statusLines().join('\n') };
+  return { ...stripLayout.buildStripModel(lastData, providers, failed) };
+}
+
+// 글자 띠에 마우스를 올리면 뜨는 안내 창 — 서비스마다 5시간·주간 사용률과 초기화까지 남은 시간(v1.0.27)
+function stripHoverModel() {
+  const providers = ALL_PROVIDER_KEYS.filter(getShowProvider).map((key) => ({ key, label: PROVIDERS[key].label }));
+  const failed = {};
+  for (const p of providers) failed[p.key] = readFailed(p.key);
+  return stripLayout.buildHoverModel(lastData, providers, failed, new Date());
 }
 
 function sendToWidget() {
@@ -663,11 +671,13 @@ async function pollProvider(providerKey) {
           const sessionStr = result.session ? `5h=${result.session.pct}%` : '5h=(없음)';
           const weeklyStr = result.weekly ? `7d=${result.weekly.pct}%` : '7d=(없음)';
           debugLog(`[${providerKey}] poll ok=true ${sessionStr} ${weeklyStr}${fableStr}`);
+          result._at = Date.now(); // 초기화까지 남은 시간을 이 시각 기준으로 센다(안내 창)
           lastData[providerKey] = result;
           readFail[providerKey] = 0;
         } else if (result.needsLogin) {
           // 로그인 필요 상태는 화면에 그대로 반영해야 하는 진짜 상태 전환이다
           debugLog(`[${providerKey}] poll needsLogin=true`);
+          result._at = Date.now();
           lastData[providerKey] = result;
           readFail[providerKey] = 0;
         } else {
@@ -744,7 +754,7 @@ function openLoginWindow(providerKey) {
           const result = await w.webContents.executeJavaScript(provider.extractScript);
           debugLog(`[${providerKey}] 로그인 후 사용량 추출: ok=${result.ok}`);
           if (!w.isDestroyed()) w.hide();
-          if (result.ok || result.needsLogin) lastData[providerKey] = result;
+          if (result.ok || result.needsLogin) { result._at = Date.now(); lastData[providerKey] = result; }
         } finally {
           loginInFlight[providerKey] = false;
           releaseWorker(providerKey);
@@ -1027,6 +1037,7 @@ if (!gotLock) {
     debugLog('createWidgetWindow 완료');
     strip = createStrip({
       getModel: stripModel,
+      getHoverModel: stripHoverModel,
       onClick: toggleWidgetFromTray,
       onContextMenu: popUpMenuFromStrip,
       onPresenceChange: (present) => {

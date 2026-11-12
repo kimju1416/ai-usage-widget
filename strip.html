@@ -101,7 +101,8 @@
       frag.appendChild(line);
     }
     strip.replaceChildren(frag);
-    document.body.title = model.tooltip || '';
+    // 마우스 올림 안내는 따로 뜨는 창(strip-pop.html)이 맡는다 — 기본 말풍선은 겹치지 않게 비운다
+    document.body.title = "";
     alive();
     reportWidth();
   }
@@ -114,6 +115,17 @@
   }, 15000);
   document.addEventListener('mouseup', (e) => { if (e.button === 0) window.stripAPI.click(); });
   document.addEventListener('contextmenu', (e) => { e.preventDefault(); window.stripAPI.contextMenu(); });
+  // 마우스를 올리면 초기화까지 남은 시간 안내 창을 띄운다(v1.0.27) — 떼는 건 메인도 커서 자리로 따로 확인한다
+  let hoverSentAt = 0;
+  function hoverOn() {
+    const t = Date.now();
+    if (t - hoverSentAt < 400) return;
+    hoverSentAt = t;
+    window.stripAPI.hover(true);
+  }
+  document.addEventListener('mouseenter', hoverOn);
+  document.addEventListener('mousemove', hoverOn);
+  document.addEventListener('mouseleave', () => { hoverSentAt = 0; window.stripAPI.hover(false); });
 </script>
 </body>
 </html>
