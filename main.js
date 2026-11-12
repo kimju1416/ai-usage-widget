@@ -479,9 +479,21 @@ function createWorkerWindow(providerKey) {
       partition: PROVIDERS[providerKey].partition
     }
   });
-  win.on('closed', () => { workerWins[providerKey] = null; });
+  // 읽을 때마다 창을 새로 만들므로, 뒤늦게 온 옛 창의 closed가 새 창 자리를 비우지 않게 같은 창일 때만 비운다
+  win.on('closed', () => { if (workerWins[providerKey] === win) workerWins[providerKey] = null; });
   workerWins[providerKey] = win;
   return win;
+}
+
+// 읽고 나면 숨긴 창을 닫는다(v1.0.26) — 로그인한 claude.ai·chatgpt.com·gemini 화면을 숨긴 창에 계속 띄워 두면
+// 같은 계정으로 AI를 쓰는 동안 그 화면도 대화를 따라 받으며 무거워지고, 앱이 통째로 죽는 원인이 됐다(TD2 3.102 실측).
+// 로그인은 partition에 남으니 다음 읽기에 새 창으로 다시 연다. 로그인 중이거나 보이는 창은 사람이 쓰는 중이라 닫지 않는다.
+function releaseWorker(providerKey) {
+  const w = workerWins[providerKey];
+  if (!w || w.isDestroyed() || loginInFlight[providerKey] || pollInFlight[providerKey]) return;
+  try { if (w.isVisible()) return; } catch (_) { return; }
+  try { w.destroy(); } catch (_) { /* 이미 닫히는 중 */ }
+  workerWins[providerKey] = null;
 }
 
 function getWorkerWindow(providerKey) {
@@ -598,7 +610,12 @@ async function pollProvider(providerKey) {
   try {
     await withTimeout(
       (async () => {
-        await win.loadURL(provider.usageUrl());
+        // ERR_ABORTED(-3)는 고장이 아니다 — chatgpt.com 사용량 화면은 열리자마자 스스로 주소를 다시 잡아
+        // 첫 열기가 «중단»으로 끝난다. 화면은 계속 열리는 중이니 이어서 읽는다(v1.0.26, TD2 3.102와 같은 고침).
+        await win.loadURL(provider.usageUrl()).catch((e) => {
+          if (!/ERR_ABORTED/.test(String(e && e.message))) throw e;
+          debugLog(`[${providerKey}] loadURL ERR_ABORTED(제자리 이동) — 이어서 읽음`);
+        });
         debugLog(`[${providerKey}] loadURL 완료`);
         await new Promise((r) => setTimeout(r, 3500));
         let result = await win.webContents.executeJavaScript(provider.extractScript);
@@ -675,12 +692,12 @@ async function pollProvider(providerKey) {
       debugLog(`[${providerKey}] poll error: ${e.message}`);
       readFail[providerKey]++;
     }
-    // 타임아웃 시 워커 창에 남은 요청을 실제로 끊어서, 좀비 프로미스가 다음 폴링 창을 계속 붙잡지 않게 한다
-    if (win && !win.isDestroyed()) {
-      try { win.webContents.stop(); } catch (_) { /* 무시 */ }
-    }
+    // 🔴 webContents.stop()을 부르지 않는다(v1.0.26) — chatgpt.com이 스스로 주소를 다시 잡는 중에 stop()을 부르면
+    // 앱이 통째로 꺼졌다(접근 위반 0xc0000005, 켜고 약 40초 뒤 · 09-24부터 16번 기록 · TD2 3.102에서 5/5 재현한 것과 같음).
+    // 같은 순간 창을 닫는 것(destroy)은 멀쩡하다 — 아래 finally의 releaseWorker가 숨긴 창을 닫는다.
   } finally {
     pollInFlight[providerKey] = false;
+    releaseWorker(providerKey);
   }
   if (myGeneration === pollGeneration[providerKey]) sendToWidget();
 }
@@ -719,13 +736,19 @@ function openLoginWindow(providerKey) {
         clearInterval(check);
         loginCheckInFlight[providerKey] = false;
         debugLog(`[${providerKey}] 로그인 감지됨 (시도 ${tries}회)`);
-        await w.loadURL(provider.usageUrl());
-        await new Promise((r) => setTimeout(r, 2500));
-        const result = await w.webContents.executeJavaScript(provider.extractScript);
-        debugLog(`[${providerKey}] 로그인 후 사용량 추출: ok=${result.ok}`);
-        w.hide();
-        lastData[providerKey] = result;
-        loginInFlight[providerKey] = false;
+        try {
+          await w.loadURL(provider.usageUrl()).catch((e) => {
+            if (!/ERR_ABORTED/.test(String(e && e.message))) throw e;
+          });
+          await new Promise((r) => setTimeout(r, 2500));
+          const result = await w.webContents.executeJavaScript(provider.extractScript);
+          debugLog(`[${providerKey}] 로그인 후 사용량 추출: ok=${result.ok}`);
+          if (!w.isDestroyed()) w.hide();
+          if (result.ok || result.needsLogin) lastData[providerKey] = result;
+        } finally {
+          loginInFlight[providerKey] = false;
+          releaseWorker(providerKey);
+        }
         sendToWidget();
       }
     } catch (e) {
